@@ -1235,6 +1235,8 @@ class DB {
     return Status::NotSupported("GetStatsHistory() is not implemented.");
   }
 
+  virtual size_t GetTimestampSize() const { return 0; }
+
  private:
   // No copying allowed
   DB(const DB&);

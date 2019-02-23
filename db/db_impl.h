@@ -743,6 +743,8 @@ class DBImpl : public DB {
                        uint64_t* new_time,
                        std::map<std::string, uint64_t>* stats_map);
 
+  size_t GetTimestampSize() const override { return timestamp_size_; }
+
  protected:
   Env* const env_;
   const std::string dbname_;
@@ -1699,6 +1701,9 @@ class DBImpl : public DB {
   // results sequentially. Flush results of memtables with lower IDs get
   // installed to MANIFEST first.
   InstrumentedCondVar atomic_flush_install_cv_;
+
+  // TODO (yanqin) move to immutable_db_options_ later.
+  size_t timestamp_size_;
 };
 
 extern Options SanitizeOptions(const std::string& db,

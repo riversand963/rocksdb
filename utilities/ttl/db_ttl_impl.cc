@@ -260,7 +260,7 @@ Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates) {
     WriteBatch updates_ttl;
     Status batch_rewrite_status;
     Status PutCF(uint32_t column_family_id, const Slice& key,
-                 const Slice& value) override {
+                 const Slice& value, const Slice& /*timestamp*/) override {
       std::string value_with_ts;
       Status st = AppendTS(value, &value_with_ts, env_);
       if (!st.ok()) {

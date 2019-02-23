@@ -1894,7 +1894,8 @@ class InMemoryHandler : public WriteBatch::Handler {
     }
   }
 
-  Status PutCF(uint32_t cf, const Slice& key, const Slice& value) override {
+  Status PutCF(uint32_t cf, const Slice& key, const Slice& value,
+               const Slice& /*timestamp*/) override {
     row_ << "PUT(" << cf << ") : ";
     commonPutMerge(key, value);
     return Status::OK();

@@ -569,8 +569,8 @@ class BlobDBImpl::BlobInserter : public WriteBatch::Handler {
 
   WriteBatch* batch() { return &batch_; }
 
-  Status PutCF(uint32_t column_family_id, const Slice& key,
-               const Slice& value) override {
+  Status PutCF(uint32_t column_family_id, const Slice& key, const Slice& value,
+               const Slice& /*timestamp*/) override {
     if (column_family_id != default_cf_id_) {
       return Status::NotSupported(
           "Blob DB doesn't support non-default column family.");

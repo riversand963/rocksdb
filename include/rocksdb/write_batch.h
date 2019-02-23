@@ -59,7 +59,8 @@ struct SavePoint {
 
 class WriteBatch : public WriteBatchBase {
  public:
-  explicit WriteBatch(size_t reserved_bytes = 0, size_t max_bytes = 0);
+  explicit WriteBatch(size_t reserved_bytes = 0, size_t max_bytes = 0,
+                      size_t ts_sz = 0);
   ~WriteBatch() override;
 
   using WriteBatchBase::Put;
@@ -183,18 +184,19 @@ class WriteBatch : public WriteBatchBase {
     // backwards compatibility. If the column family is not default,
     // the function is noop
     virtual Status PutCF(uint32_t column_family_id, const Slice& key,
-                         const Slice& value) {
+                         const Slice& value, const Slice& timestamp) {
       if (column_family_id == 0) {
         // Put() historically doesn't return status. We didn't want to be
         // backwards incompatible so we didn't change the return status
         // (this is a public API). We do an ordinary get and return Status::OK()
-        Put(key, value);
+        Put(key, value, timestamp);
         return Status::OK();
       }
       return Status::InvalidArgument(
           "non-default column family and PutCF not implemented");
     }
-    virtual void Put(const Slice& /*key*/, const Slice& /*value*/) {}
+    virtual void Put(const Slice& /*key*/, const Slice& /*value*/,
+                     const Slice& /*timestamp*/) {}
 
     virtual Status DeleteCF(uint32_t column_family_id, const Slice& key) {
       if (column_family_id == 0) {
@@ -267,6 +269,10 @@ class WriteBatch : public WriteBatchBase {
     // iteration is halted. Otherwise, it continues iterating. The default
     // implementation always returns true.
     virtual bool Continue();
+
+    virtual Status SetTimestamp(char* /*dst*/, size_t /*ts_sz*/) {
+      return Status::OK();
+    }
 
    protected:
     friend class WriteBatch;
@@ -360,6 +366,7 @@ class WriteBatch : public WriteBatchBase {
   bool is_latest_persistent_state_ = false;
 
  protected:
+  size_t timestamp_size_;
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 
   // Intentionally copyable

@@ -25,7 +25,8 @@ class Statistics;
 Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                                   WriteType* type, Slice* Key,
                                                   Slice* value, Slice* blob,
-                                                  Slice* xid) const {
+                                                  Slice* xid,
+                                                  Slice* timestamp) const {
   if (type == nullptr || Key == nullptr || value == nullptr ||
       blob == nullptr || xid == nullptr) {
     return Status::InvalidArgument("Output parameters cannot be null");
@@ -42,8 +43,9 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
   Slice input = Slice(rep_.data() + data_offset, rep_.size() - data_offset);
   char tag;
   uint32_t column_family;
-  Status s = ReadRecordFromWriteBatch(&input, &tag, &column_family, Key, value,
-                                      blob, xid);
+  Status s =
+      ReadRecordFromWriteBatch(&input, timestamp_size_, &tag, &column_family,
+                               Key, value, blob, xid, timestamp);
 
   switch (tag) {
     case kTypeColumnFamilyValue:

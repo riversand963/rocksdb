@@ -99,6 +99,13 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
          disable_memtable);
 
   Status status;
+  if (write_options.timestamp != nullptr) {
+    Slice* ts = write_options.timestamp;
+    status = WriteBatchInternal::SetTimestamp(my_batch, *ts);
+    if (!status.ok()) {
+      return status;
+    }
+  }
   if (write_options.low_pri) {
     status = ThrottleLowPriWritesIfNeeded(write_options, my_batch);
     if (!status.ok()) {
@@ -1571,7 +1578,8 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   // Pre-allocate size of write batch conservatively.
   // 8 bytes are taken by header, 4 bytes for count, 1 byte for type,
   // and we allocate 11 extra bytes for key length, as well as value length.
-  WriteBatch batch(key.size() + value.size() + 24);
+  size_t ts_sz = GetTimestampSize();
+  WriteBatch batch(key.size() + value.size() + ts_sz + 24, 0, ts_sz);
   Status s = batch.Put(column_family, key, value);
   if (!s.ok()) {
     return s;

@@ -725,7 +725,8 @@ Status TransactionBaseImpl::RebuildFromWriteBatch(WriteBatch* src_batch) {
       assert(dynamic_cast<TransactionBaseImpl*>(txn_) != nullptr);
     }
 
-    Status PutCF(uint32_t cf, const Slice& key, const Slice& val) override {
+    Status PutCF(uint32_t cf, const Slice& key, const Slice& val,
+                 const Slice& /*timestamp*/) override {
       return txn_->Put(db_->GetColumnFamilyHandle(cf), key, val);
     }
 

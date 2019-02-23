@@ -249,7 +249,8 @@ TEST_F(DBTestXactLogIterator, TransactionLogIteratorBlobs) {
   auto res = OpenTransactionLogIter(0)->GetBatch();
   struct Handler : public WriteBatch::Handler {
     std::string seen;
-    Status PutCF(uint32_t cf, const Slice& key, const Slice& value) override {
+    Status PutCF(uint32_t cf, const Slice& key, const Slice& value,
+                 const Slice& /*timestamp*/) override {
       seen += "Put(" + ToString(cf) + ", " + key.ToString() + ", " +
               ToString(value.size()) + ")";
       return Status::OK();

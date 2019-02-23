@@ -271,8 +271,8 @@ void TransactionLogIteratorImpl::UpdateCurrentWriteBatch(const Slice& record) {
       return Status::OK();
     }
 
-    Status PutCF(uint32_t /*cf*/, const Slice& /*key*/,
-                 const Slice& /*val*/) override {
+    Status PutCF(uint32_t /*cf*/, const Slice& /*key*/, const Slice& /*val*/,
+                 const Slice& /*timestamp*/) override {
       return Status::OK();
     }
     Status DeleteCF(uint32_t /*cf*/, const Slice& /*key*/) override {

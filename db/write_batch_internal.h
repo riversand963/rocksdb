@@ -196,6 +196,7 @@ class WriteBatchInternal {
   // state meant to be used only during recovery.
   static void SetAsLastestPersistentState(WriteBatch* b);
   static bool IsLatestPersistentState(const WriteBatch* b);
+  static Status SetTimestamp(WriteBatch* b, const Slice& timestamp);
 };
 
 // LocalSavePoint is similar to a scope guard

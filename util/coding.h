@@ -61,6 +61,7 @@ extern bool GetVarint64(Slice* input, uint64_t* value);
 extern bool GetLengthPrefixedSlice(Slice* input, Slice* result);
 // This function assumes data is well-formed.
 extern Slice GetLengthPrefixedSlice(const char* data);
+extern bool GetFixedLengthSlice(Slice* input, size_t len, Slice* result);
 
 extern Slice GetSliceUntil(Slice* slice, char delimiter);
 
@@ -405,6 +406,15 @@ inline Slice GetLengthPrefixedSlice(const char* data) {
   // unsigned char is 7 bits, uint32_t is 32 bits, need 5 unsigned char
   auto p = GetVarint32Ptr(data, data + 5 /* limit */, &len);
   return Slice(p, len);
+}
+
+inline bool GetFixedLengthSlice(Slice* input, size_t len, Slice* result) {
+  if (input->size() >= len) {
+    *result = Slice(input->data(), len);
+    input->remove_prefix(len);
+    return true;
+  }
+  return false;
 }
 
 inline Slice GetSliceUntil(Slice* slice, char delimiter) {

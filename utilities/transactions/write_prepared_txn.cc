@@ -281,7 +281,8 @@ Status WritePreparedTxn::RollbackInternal() {
       return s;
     }
 
-    Status PutCF(uint32_t cf, const Slice& key, const Slice& /*val*/) override {
+    Status PutCF(uint32_t cf, const Slice& key, const Slice& /*val*/,
+                 const Slice& /*timestamp*/) override {
       return Rollback(cf, key);
     }
 

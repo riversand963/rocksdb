@@ -587,9 +587,10 @@ extern bool ReadKeyFromWriteBatchEntry(Slice* input, Slice* key,
 // Slice they point to.
 // Tag is defined as ValueType.
 // input will be advanced to after the record.
-extern Status ReadRecordFromWriteBatch(Slice* input, char* tag,
+extern Status ReadRecordFromWriteBatch(Slice* input, size_t ts_sz, char* tag,
                                        uint32_t* column_family, Slice* key,
-                                       Slice* value, Slice* blob, Slice* xid);
+                                       Slice* value, Slice* blob, Slice* xid,
+                                       Slice* ts);
 
 // When user call DeleteRange() to delete a range of keys,
 // we will store a serialized RangeTombstone in MemTable and SST.

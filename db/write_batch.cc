@@ -80,7 +80,7 @@ enum ContentFlags : uint32_t {
 struct BatchContentClassifier : public WriteBatch::Handler {
   uint32_t content_flags = 0;
 
-  Status PutCF(uint32_t, const Slice&, const Slice&) override {
+  Status PutCF(uint32_t, const Slice&, const Slice&, const Slice&) override {
     content_flags |= ContentFlags::HAS_PUT;
     return Status::OK();
   }
@@ -140,8 +140,12 @@ struct SavePoints {
   std::stack<SavePoint> stack;
 };
 
-WriteBatch::WriteBatch(size_t reserved_bytes, size_t max_bytes)
-    : save_points_(nullptr), content_flags_(0), max_bytes_(max_bytes), rep_() {
+WriteBatch::WriteBatch(size_t reserved_bytes, size_t max_bytes, size_t ts_sz)
+    : save_points_(nullptr),
+      content_flags_(0),
+      max_bytes_(max_bytes),
+      timestamp_size_(ts_sz),
+      rep_() {
   rep_.reserve((reserved_bytes > WriteBatchInternal::kHeader) ?
     reserved_bytes : WriteBatchInternal::kHeader);
   rep_.resize(WriteBatchInternal::kHeader);
@@ -151,12 +155,14 @@ WriteBatch::WriteBatch(const std::string& rep)
     : save_points_(nullptr),
       content_flags_(ContentFlags::DEFERRED),
       max_bytes_(0),
+      timestamp_size_(0),
       rep_(rep) {}
 
 WriteBatch::WriteBatch(std::string&& rep)
     : save_points_(nullptr),
       content_flags_(ContentFlags::DEFERRED),
       max_bytes_(0),
+      timestamp_size_(0),
       rep_(std::move(rep)) {}
 
 WriteBatch::WriteBatch(const WriteBatch& src)
@@ -164,6 +170,7 @@ WriteBatch::WriteBatch(const WriteBatch& src)
       wal_term_point_(src.wal_term_point_),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       max_bytes_(src.max_bytes_),
+      timestamp_size_(src.timestamp_size_),
       rep_(src.rep_) {}
 
 WriteBatch::WriteBatch(WriteBatch&& src) noexcept
@@ -171,6 +178,7 @@ WriteBatch::WriteBatch(WriteBatch&& src) noexcept
       wal_term_point_(std::move(src.wal_term_point_)),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       max_bytes_(src.max_bytes_),
+      timestamp_size_(src.timestamp_size_),
       rep_(std::move(src.rep_)) {}
 
 WriteBatch& WriteBatch::operator=(const WriteBatch& src) {
@@ -296,9 +304,10 @@ bool WriteBatch::HasRollback() const {
   return (ComputeContentFlags() & ContentFlags::HAS_ROLLBACK) != 0;
 }
 
-Status ReadRecordFromWriteBatch(Slice* input, char* tag,
+Status ReadRecordFromWriteBatch(Slice* input, size_t ts_sz, char* tag,
                                 uint32_t* column_family, Slice* key,
-                                Slice* value, Slice* blob, Slice* xid) {
+                                Slice* value, Slice* blob, Slice* xid,
+                                Slice* ts) {
   assert(key != nullptr && value != nullptr);
   *tag = (*input)[0];
   input->remove_prefix(1);
@@ -311,6 +320,7 @@ Status ReadRecordFromWriteBatch(Slice* input, char* tag,
       FALLTHROUGH_INTENDED;
     case kTypeValue:
       if (!GetLengthPrefixedSlice(input, key) ||
+          !GetFixedLengthSlice(input, ts_sz, ts) ||
           !GetLengthPrefixedSlice(input, value)) {
         return Status::Corruption("bad WriteBatch Put");
       }
@@ -403,7 +413,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
   }
 
   input.remove_prefix(WriteBatchInternal::kHeader);
-  Slice key, value, blob, xid;
+  Slice key, value, blob, xid, timestamp;
   // Sometimes a sub-batch starts with a Noop. We want to exclude such Noops as
   // the batch boundary symbols otherwise we would mis-count the number of
   // batches. We do that by checking whether the accumulated batch is empty
@@ -426,8 +436,14 @@ Status WriteBatch::Iterate(Handler* handler) const {
       tag = 0;
       column_family = 0;  // default
 
-      s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
-                                   &blob, &xid);
+      s = ReadRecordFromWriteBatch(&input, timestamp_size_, &tag,
+                                   &column_family, &key, &value, &blob, &xid,
+                                   &timestamp);
+      if (!s.ok()) {
+        return s;
+      }
+      s = handler->SetTimestamp(const_cast<char*>(timestamp.data()),
+                                timestamp.size());
       if (!s.ok()) {
         return s;
       }
@@ -448,7 +464,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
       case kTypeValue:
         assert(content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_PUT));
-        s = handler->PutCF(column_family, key, value);
+        s = handler->PutCF(column_family, key, value, timestamp);
         if (LIKELY(s.ok())) {
           empty_batch = false;
           found++;
@@ -641,6 +657,20 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
     PutVarint32(&b->rep_, column_family_id);
   }
   PutLengthPrefixedSlice(&b->rep_, key);
+  size_t ts_sz = b->timestamp_size_;
+  if (ts_sz > 0) {
+    static char tmp_buf[16];
+    std::unique_ptr<char[]> heap_buf;
+    char* pbuf = nullptr;
+    if (ts_sz <= sizeof(tmp_buf)) {
+      pbuf = tmp_buf;
+    } else {
+      pbuf = new char[ts_sz];
+      heap_buf.reset(pbuf);
+    }
+    assert(pbuf != nullptr);
+    b->rep_.append(pbuf, ts_sz);
+  }
   PutLengthPrefixedSlice(&b->rep_, value);
   b->content_flags_.store(
       b->content_flags_.load(std::memory_order_relaxed) | ContentFlags::HAS_PUT,
@@ -1219,7 +1249,9 @@ class MemTableInserter : public WriteBatch::Handler {
   }
 
   Status PutCFImpl(uint32_t column_family_id, const Slice& key,
-                   const Slice& value, ValueType value_type) {
+                   const Slice& value, ValueType value_type,
+                   const Slice& timestamp) {
+    (void)timestamp;
     // optimize for non-recovery mode
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
       WriteBatchInternal::Put(rebuilding_trx_, column_family_id, key, value);
@@ -1322,9 +1354,9 @@ class MemTableInserter : public WriteBatch::Handler {
     return ret_status;
   }
 
-  Status PutCF(uint32_t column_family_id, const Slice& key,
-               const Slice& value) override {
-    return PutCFImpl(column_family_id, key, value, kTypeValue);
+  Status PutCF(uint32_t column_family_id, const Slice& key, const Slice& value,
+               const Slice& timestamp) override {
+    return PutCFImpl(column_family_id, key, value, kTypeValue, timestamp);
   }
 
   Status DeleteImpl(uint32_t /*column_family_id*/, const Slice& key,
@@ -1583,7 +1615,7 @@ class MemTableInserter : public WriteBatch::Handler {
   Status PutBlobIndexCF(uint32_t column_family_id, const Slice& key,
                         const Slice& value) override {
     // Same as PutCF except for value type.
-    return PutCFImpl(column_family_id, key, value, kTypeBlobIndex);
+    return PutCFImpl(column_family_id, key, value, kTypeBlobIndex, Slice());
   }
 
   void CheckMemtableFull() {
@@ -1868,6 +1900,55 @@ size_t WriteBatchInternal::AppendedByteSize(size_t leftByteSize,
   } else {
     return leftByteSize + rightByteSize - WriteBatchInternal::kHeader;
   }
+}
+
+struct TimestampSetter : public WriteBatch::Handler {
+  const Slice& timestamp_;
+
+  TimestampSetter(const Slice& timestamp) : timestamp_(timestamp) {}
+
+  Status PutCF(uint32_t, const Slice&, const Slice&, const Slice&) override {
+    return Status::OK();
+  }
+
+  Status DeleteCF(uint32_t, const Slice&) override { return Status::OK(); }
+
+  Status SingleDeleteCF(uint32_t, const Slice&) override {
+    return Status::OK();
+  }
+
+  Status DeleteRangeCF(uint32_t, const Slice&, const Slice&) override {
+    return Status::OK();
+  }
+
+  Status MergeCF(uint32_t, const Slice&, const Slice&) override {
+    return Status::OK();
+  }
+
+  Status PutBlobIndexCF(uint32_t, const Slice&, const Slice&) override {
+    return Status::OK();
+  }
+
+  Status MarkBeginPrepare(bool) override { return Status::OK(); }
+
+  Status MarkEndPrepare(const Slice&) override { return Status::OK(); }
+
+  Status MarkCommit(const Slice&) override { return Status::OK(); }
+
+  Status MarkRollback(const Slice&) override { return Status::OK(); }
+
+  Status SetTimestamp(char* dst, size_t ts_sz) override {
+    if (ts_sz < timestamp_.size()) {
+      return Status::Corruption("timestamp size mismatch");
+    }
+    memcpy(dst, timestamp_.data(), ts_sz);
+    return Status::OK();
+  }
+};
+
+Status WriteBatchInternal::SetTimestamp(WriteBatch* b, const Slice& timestamp) {
+  TimestampSetter setter(timestamp);
+  return b->Iterate(&setter);
 }
 
 }  // namespace rocksdb

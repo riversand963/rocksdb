@@ -151,7 +151,8 @@ struct KeySetBuilder : public WriteBatch::Handler {
   KeySetBuilder(WriteUnpreparedTxn* txn, bool rollback_merge_operands)
       : txn_(txn), rollback_merge_operands_(rollback_merge_operands) {}
 
-  Status PutCF(uint32_t cf, const Slice& key, const Slice& val) override;
+  Status PutCF(uint32_t cf, const Slice& key, const Slice& val,
+               const Slice& /*timestamp*/) override;
 
   Status DeleteCF(uint32_t cf, const Slice& key) override;
 
