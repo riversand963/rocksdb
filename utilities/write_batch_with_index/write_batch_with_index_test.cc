@@ -45,8 +45,8 @@ struct Entry {
 
 struct TestHandler : public WriteBatch::Handler {
   std::map<uint32_t, std::vector<Entry>> seen;
-  Status PutCF(uint32_t column_family_id, const Slice& key, const Slice& value,
-               const Slice& /*timestamp*/) override {
+  Status PutCF(uint32_t column_family_id, const Slice& key,
+               const Slice& value) override {
     Entry e;
     e.key = key.ToString();
     e.value = value.ToString();

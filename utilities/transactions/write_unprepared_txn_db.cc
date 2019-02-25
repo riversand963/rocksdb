@@ -115,8 +115,8 @@ Status WriteUnpreparedTxnDB::RollbackRecoveredTransaction(
         return s;
       }
 
-      Status PutCF(uint32_t cf, const Slice& key, const Slice& /*val*/,
-                   const Slice& /*timestamp*/) override {
+      Status PutCF(uint32_t cf, const Slice& key,
+                   const Slice& /*val*/) override {
         return Rollback(cf, key);
       }
 
@@ -394,8 +394,8 @@ Iterator* WriteUnpreparedTxnDB::NewIterator(const ReadOptions& options,
   return db_iter;
 }
 
-Status KeySetBuilder::PutCF(uint32_t cf, const Slice& key, const Slice& /*val*/,
-                            const Slice& /*timestamp*/) {
+Status KeySetBuilder::PutCF(uint32_t cf, const Slice& key,
+                            const Slice& /*val*/) {
   txn_->UpdateWriteKeySet(cf, key);
   return Status::OK();
 }

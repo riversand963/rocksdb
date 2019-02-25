@@ -184,19 +184,18 @@ class WriteBatch : public WriteBatchBase {
     // backwards compatibility. If the column family is not default,
     // the function is noop
     virtual Status PutCF(uint32_t column_family_id, const Slice& key,
-                         const Slice& value, const Slice& timestamp) {
+                         const Slice& value) {
       if (column_family_id == 0) {
         // Put() historically doesn't return status. We didn't want to be
         // backwards incompatible so we didn't change the return status
         // (this is a public API). We do an ordinary get and return Status::OK()
-        Put(key, value, timestamp);
+        Put(key, value);
         return Status::OK();
       }
       return Status::InvalidArgument(
           "non-default column family and PutCF not implemented");
     }
-    virtual void Put(const Slice& /*key*/, const Slice& /*value*/,
-                     const Slice& /*timestamp*/) {}
+    virtual void Put(const Slice& /*key*/, const Slice& /*value*/) {}
 
     virtual Status DeleteCF(uint32_t column_family_id, const Slice& key) {
       if (column_family_id == 0) {

@@ -2522,8 +2522,7 @@ class ModelDB : public DB {
     class Handler : public WriteBatch::Handler {
      public:
       KVMap* map_;
-      void Put(const Slice& key, const Slice& value,
-               const Slice& /*timestamp*/) override {
+      void Put(const Slice& key, const Slice& value) override {
         (*map_)[key.ToString()] = value.ToString();
       }
       void Merge(const Slice& /*key*/, const Slice& /*value*/) override {

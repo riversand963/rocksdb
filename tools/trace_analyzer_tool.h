@@ -258,8 +258,7 @@ class TraceWriteHandler : public WriteBatch::Handler {
   ~TraceWriteHandler() {}
 
   virtual Status PutCF(uint32_t column_family_id, const Slice& key,
-                       const Slice& value,
-                       const Slice& /*timestamp*/) override {
+                       const Slice& value) override {
     return ta_ptr->HandlePut(column_family_id, key, value);
   }
   virtual Status DeleteCF(uint32_t column_family_id,

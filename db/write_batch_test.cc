@@ -237,7 +237,7 @@ namespace {
   struct TestHandler : public WriteBatch::Handler {
     std::string seen;
     Status PutCF(uint32_t column_family_id, const Slice& key,
-                 const Slice& value, const Slice& /*timestamp*/) override {
+                 const Slice& value) override {
       if (column_family_id == 0) {
         seen += "Put(" + key.ToString() + ", " + value.ToString() + ")";
       } else {
@@ -438,7 +438,7 @@ TEST_F(WriteBatchTest, DISABLED_ManyUpdates) {
     uint32_t num_seen = 0;
     char expected_char = 'A';
     Status PutCF(uint32_t /*column_family_id*/, const Slice& key,
-                 const Slice& value, const Slice& /*timestamp*/) override {
+                 const Slice& value) override {
       EXPECT_EQ(kKeyValueSize, key.size());
       EXPECT_EQ(kKeyValueSize, value.size());
       EXPECT_EQ(expected_char, key[0]);
@@ -493,7 +493,7 @@ TEST_F(WriteBatchTest, DISABLED_LargeKeyValue) {
   struct NoopHandler : public WriteBatch::Handler {
     int num_seen = 0;
     Status PutCF(uint32_t /*column_family_id*/, const Slice& key,
-                 const Slice& value, const Slice& /*timestamp*/) override {
+                 const Slice& value) override {
       EXPECT_EQ(kKeyValueSize, key.size());
       EXPECT_EQ(kKeyValueSize, value.size());
       EXPECT_EQ('A' + num_seen, key[0]);
@@ -532,9 +532,9 @@ TEST_F(WriteBatchTest, Continue) {
   struct Handler : public TestHandler {
     int num_seen = 0;
     Status PutCF(uint32_t column_family_id, const Slice& key,
-                 const Slice& value, const Slice& timestamp) override {
+                 const Slice& value) override {
       ++num_seen;
-      return TestHandler::PutCF(column_family_id, key, value, timestamp);
+      return TestHandler::PutCF(column_family_id, key, value);
     }
     Status DeleteCF(uint32_t column_family_id, const Slice& key) override {
       ++num_seen;

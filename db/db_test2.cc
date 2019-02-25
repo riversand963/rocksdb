@@ -687,8 +687,7 @@ TEST_F(DBTest2, WalFilterTestWithChangeBatch) {
       : new_write_batch_(new_write_batch),
       num_keys_to_add_in_new_batch_(num_keys_to_add_in_new_batch),
       num_keys_added_(0) {}
-    void Put(const Slice& key, const Slice& value,
-             const Slice& /*timestamp*/) override {
+    void Put(const Slice& key, const Slice& value) override {
       if (num_keys_added_ < num_keys_to_add_in_new_batch_) {
         new_write_batch_->Put(key, value);
         ++num_keys_added_;
@@ -908,8 +907,7 @@ TEST_F(DBTest2, WalFilterTestWithColumnFamilies) {
           log_number_(current_log_number){}
 
         Status PutCF(uint32_t column_family_id, const Slice& key,
-                     const Slice& /*value*/,
-                     const Slice& /*timestamp*/) override {
+                     const Slice& /*value*/) override {
           auto it = cf_log_number_map_.find(column_family_id);
           assert(it != cf_log_number_map_.end());
           unsigned long long log_number_for_cf = it->second;

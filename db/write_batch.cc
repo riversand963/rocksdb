@@ -80,7 +80,7 @@ enum ContentFlags : uint32_t {
 struct BatchContentClassifier : public WriteBatch::Handler {
   uint32_t content_flags = 0;
 
-  Status PutCF(uint32_t, const Slice&, const Slice&, const Slice&) override {
+  Status PutCF(uint32_t, const Slice&, const Slice&) override {
     content_flags |= ContentFlags::HAS_PUT;
     return Status::OK();
   }
@@ -464,7 +464,9 @@ Status WriteBatch::Iterate(Handler* handler) const {
       case kTypeValue:
         assert(content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_PUT));
-        s = handler->PutCF(column_family, key, value, timestamp);
+        s = handler->PutCF(column_family,
+                           Slice(key.data(), key.size() + timestamp_size_),
+                           value);
         if (LIKELY(s.ok())) {
           empty_batch = false;
           found++;
@@ -1249,9 +1251,7 @@ class MemTableInserter : public WriteBatch::Handler {
   }
 
   Status PutCFImpl(uint32_t column_family_id, const Slice& key,
-                   const Slice& value, ValueType value_type,
-                   const Slice& timestamp) {
-    (void)timestamp;
+                   const Slice& value, ValueType value_type) {
     // optimize for non-recovery mode
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
       WriteBatchInternal::Put(rebuilding_trx_, column_family_id, key, value);
@@ -1354,9 +1354,9 @@ class MemTableInserter : public WriteBatch::Handler {
     return ret_status;
   }
 
-  Status PutCF(uint32_t column_family_id, const Slice& key, const Slice& value,
-               const Slice& timestamp) override {
-    return PutCFImpl(column_family_id, key, value, kTypeValue, timestamp);
+  Status PutCF(uint32_t column_family_id, const Slice& key,
+               const Slice& value) override {
+    return PutCFImpl(column_family_id, key, value, kTypeValue);
   }
 
   Status DeleteImpl(uint32_t /*column_family_id*/, const Slice& key,
@@ -1615,7 +1615,7 @@ class MemTableInserter : public WriteBatch::Handler {
   Status PutBlobIndexCF(uint32_t column_family_id, const Slice& key,
                         const Slice& value) override {
     // Same as PutCF except for value type.
-    return PutCFImpl(column_family_id, key, value, kTypeBlobIndex, Slice());
+    return PutCFImpl(column_family_id, key, value, kTypeBlobIndex);
   }
 
   void CheckMemtableFull() {
@@ -1907,7 +1907,7 @@ struct TimestampSetter : public WriteBatch::Handler {
 
   TimestampSetter(const Slice& timestamp) : timestamp_(timestamp) {}
 
-  Status PutCF(uint32_t, const Slice&, const Slice&, const Slice&) override {
+  Status PutCF(uint32_t, const Slice&, const Slice&) override {
     return Status::OK();
   }
 
