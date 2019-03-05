@@ -1010,6 +1010,8 @@ struct DBOptions {
   // Currently, any WAL-enabled writes after atomic flush may be replayed
   // independently if the process crashes later and tries to recover.
   bool atomic_flush = false;
+
+  size_t timestamp_size = 0;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1187,6 +1189,8 @@ struct ReadOptions {
   // Default: 0 (don't filter by seqnum, return user keys)
   SequenceNumber iter_start_seqnum;
 
+  const Slice* timestamp;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };
@@ -1236,12 +1240,15 @@ struct WriteOptions {
   // Default: false
   bool low_pri;
 
+  const Slice* timestamp;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
-        low_pri(false) {}
+        low_pri(false),
+        timestamp(nullptr) {}
 };
 
 // Options that control flush operations

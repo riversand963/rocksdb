@@ -131,6 +131,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.two_write_queues = immutable_db_options.two_write_queues;
   options.manual_wal_flush = immutable_db_options.manual_wal_flush;
   options.atomic_flush = immutable_db_options.atomic_flush;
+  options.timestamp_size = immutable_db_options.timestamp_size;
 
   return options;
 }
@@ -1574,7 +1575,11 @@ std::unordered_map<std::string, OptionTypeInfo>
         {"atomic_flush",
          {offsetof(struct DBOptions, atomic_flush), OptionType::kBoolean,
           OptionVerificationType::kNormal, false,
-          offsetof(struct ImmutableDBOptions, atomic_flush)}}};
+          offsetof(struct ImmutableDBOptions, atomic_flush)}},
+        {"timestamp_size",
+         {offsetof(struct DBOptions, timestamp_size), OptionType::kSizeT,
+          OptionVerificationType::kNormal, false,
+          offsetof(struct ImmutableDBOptions, timestamp_size)}}};
 
 std::unordered_map<std::string, BlockBasedTableOptions::IndexType>
     OptionsHelper::block_base_table_index_type_string_map = {
