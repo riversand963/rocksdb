@@ -1502,7 +1502,7 @@ class MemTableInserter : public WriteBatch::Handler {
     // So we disable merge in recovery
     if (moptions->max_successive_merges > 0 && db_ != nullptr &&
         recovering_log_number_ == 0) {
-      LookupKey lkey(key, sequence_);
+      LookupKey lkey(key, sequence_, moptions->timestamp_size);
 
       // Count the number of successive merges at the head
       // of the key in the memtable

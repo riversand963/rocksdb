@@ -1130,7 +1130,7 @@ TEST_F(DBBasicTest, MultiGetMultiCFSnapshot) {
 
 class DBBasicTestWithTimestamp : public DBTestBase {
  public:
-  DBBasicTestWithTimestamp(): DBTestBase("/db_basic_test_with_timestamp") {}
+  DBBasicTestWithTimestamp() : DBTestBase("/db_basic_test_with_timestamp") {}
 
  protected:
   Slice EncodeTimestamp(uint64_t low, uint64_t high, std::string* ts) {

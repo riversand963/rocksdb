@@ -45,7 +45,7 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
   SuperVersion* super_version = cfd->GetSuperVersion();
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
-  LookupKey lkey(key, snapshot);
+  LookupKey lkey(key, snapshot, immutable_db_options_.timestamp_size);
   PERF_TIMER_STOP(get_snapshot_time);
   if (super_version->mem->Get(lkey, pinnable_val->GetSelf(), &s, &merge_context,
                               &max_covering_tombstone_seq, read_options)) {

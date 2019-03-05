@@ -213,7 +213,7 @@ TEST_F(MemTableListTest, GetTest) {
   SequenceNumber max_covering_tombstone_seq = 0;
   autovector<MemTable*> to_delete;
 
-  LookupKey lkey("key1", seq);
+  LookupKey lkey("key1", seq, options.timestamp_size);
   bool found = list.current()->Get(lkey, &value, &s, &merge_context,
                                    &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
@@ -237,20 +237,20 @@ TEST_F(MemTableListTest, GetTest) {
 
   // Fetch the newly written keys
   merge_context.Clear();
-  found = mem->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                   &max_covering_tombstone_seq, ReadOptions());
+  found = mem->Get(LookupKey("key1", seq, options.timestamp_size), &value, &s,
+                   &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ(value, "value1");
 
   merge_context.Clear();
-  found = mem->Get(LookupKey("key1", 2), &value, &s, &merge_context,
-                   &max_covering_tombstone_seq, ReadOptions());
+  found = mem->Get(LookupKey("key1", 2, options.timestamp_size), &value, &s,
+                   &merge_context, &max_covering_tombstone_seq, ReadOptions());
   // MemTable found out that this key is *not* found (at this sequence#)
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
-  found = mem->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                   &max_covering_tombstone_seq, ReadOptions());
+  found = mem->Get(LookupKey("key2", seq, options.timestamp_size), &value, &s,
+                   &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ(value, "value2.2");
 
@@ -276,27 +276,28 @@ TEST_F(MemTableListTest, GetTest) {
 
   // Fetch keys via MemTableList
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key1", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
-  found = list.current()->Get(LookupKey("key1", saved_seq), &value, &s,
-                              &merge_context, &max_covering_tombstone_seq,
-                              ReadOptions());
+  found = list.current()->Get(
+      LookupKey("key1", saved_seq, options.timestamp_size), &value, &s,
+      &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ("value1", value);
 
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key2", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ(value, "value2.3");
 
   merge_context.Clear();
-  found = list.current()->Get(LookupKey("key2", 1), &value, &s, &merge_context,
+  found = list.current()->Get(LookupKey("key2", 1, options.timestamp_size),
+                              &value, &s, &merge_context,
                               &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
@@ -323,7 +324,7 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
   SequenceNumber max_covering_tombstone_seq = 0;
   autovector<MemTable*> to_delete;
 
-  LookupKey lkey("key1", seq);
+  LookupKey lkey("key1", seq, options.timestamp_size);
   bool found = list.current()->Get(lkey, &value, &s, &merge_context,
                                    &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
@@ -346,14 +347,14 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
 
   // Fetch the newly written keys
   merge_context.Clear();
-  found = mem->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                   &max_covering_tombstone_seq, ReadOptions());
+  found = mem->Get(LookupKey("key1", seq, options.timestamp_size), &value, &s,
+                   &merge_context, &max_covering_tombstone_seq, ReadOptions());
   // MemTable found out that this key is *not* found (at this sequence#)
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
-  found = mem->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                   &max_covering_tombstone_seq, ReadOptions());
+  found = mem->Get(LookupKey("key2", seq, options.timestamp_size), &value, &s,
+                   &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ(value, "value2.2");
 
@@ -363,15 +364,15 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
 
   // Fetch keys via MemTableList
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key1", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key2", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(s.ok() && found);
   ASSERT_EQ("value2.2", value);
 
@@ -391,28 +392,28 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
 
   // Verify keys are no longer in MemTableList
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key1", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key2", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   // Verify keys are present in history
   merge_context.Clear();
   found = list.current()->GetFromHistory(
-      LookupKey("key1", seq), &value, &s, &merge_context,
-      &max_covering_tombstone_seq, ReadOptions());
+      LookupKey("key1", seq, options.timestamp_size), &value, &s,
+      &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
   found = list.current()->GetFromHistory(
-      LookupKey("key2", seq), &value, &s, &merge_context,
-      &max_covering_tombstone_seq, ReadOptions());
+      LookupKey("key2", seq, options.timestamp_size), &value, &s,
+      &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found);
   ASSERT_EQ("value2.2", value);
 
@@ -453,42 +454,42 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
 
   // Verify keys are no longer in MemTableList
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key1", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key1", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key2", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key3", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key3", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   // Verify that the second memtable's keys are in the history
   merge_context.Clear();
   found = list.current()->GetFromHistory(
-      LookupKey("key1", seq), &value, &s, &merge_context,
-      &max_covering_tombstone_seq, ReadOptions());
+      LookupKey("key1", seq, options.timestamp_size), &value, &s,
+      &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found && s.IsNotFound());
 
   merge_context.Clear();
   found = list.current()->GetFromHistory(
-      LookupKey("key3", seq), &value, &s, &merge_context,
-      &max_covering_tombstone_seq, ReadOptions());
+      LookupKey("key3", seq, options.timestamp_size), &value, &s,
+      &merge_context, &max_covering_tombstone_seq, ReadOptions());
   ASSERT_TRUE(found);
   ASSERT_EQ("value3", value);
 
   // Verify that key2 from the first memtable is no longer in the history
   merge_context.Clear();
-  found =
-      list.current()->Get(LookupKey("key2", seq), &value, &s, &merge_context,
-                          &max_covering_tombstone_seq, ReadOptions());
+  found = list.current()->Get(LookupKey("key2", seq, options.timestamp_size),
+                              &value, &s, &merge_context,
+                              &max_covering_tombstone_seq, ReadOptions());
   ASSERT_FALSE(found);
 
   // Cleanup

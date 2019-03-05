@@ -294,7 +294,7 @@ class LookupKey {
  public:
   // Initialize *this for looking up user_key at a snapshot with
   // the specified sequence number.
-  LookupKey(const Slice& _user_key, SequenceNumber sequence);
+  LookupKey(const Slice& _user_key, SequenceNumber sequence, size_t ts_sz);
 
   ~LookupKey();
 
@@ -310,7 +310,8 @@ class LookupKey {
 
   // Return the user key
   Slice user_key() const {
-    return Slice(kstart_, static_cast<size_t>(end_ - kstart_ - 8));
+    return Slice(kstart_,
+                 static_cast<size_t>(end_ - kstart_ - 8 - timestamp_size_));
   }
 
  private:
@@ -325,6 +326,7 @@ class LookupKey {
   const char* kstart_;
   const char* end_;
   char space_[200];      // Avoid allocation for short keys
+  size_t timestamp_size_;
 
   // No copying allowed
   LookupKey(const LookupKey&);

@@ -59,7 +59,8 @@ ImmutableMemTableOptions::ImmutableMemTableOptions(
       max_successive_merges(mutable_cf_options.max_successive_merges),
       statistics(ioptions.statistics),
       merge_operator(ioptions.merge_operator),
-      info_log(ioptions.info_log) {}
+      info_log(ioptions.info_log),
+      timestamp_size(ioptions.timestamp_size) {}
 
 MemTable::MemTable(const InternalKeyComparator& cmp,
                    const ImmutableCFOptions& ioptions,
@@ -817,7 +818,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
 void MemTable::Update(SequenceNumber seq,
                       const Slice& key,
                       const Slice& value) {
-  LookupKey lkey(key, seq);
+  LookupKey lkey(key, seq, moptions_.timestamp_size);
   Slice mem_key = lkey.memtable_key();
 
   std::unique_ptr<MemTableRep::Iterator> iter(
@@ -876,7 +877,7 @@ void MemTable::Update(SequenceNumber seq,
 bool MemTable::UpdateCallback(SequenceNumber seq,
                               const Slice& key,
                               const Slice& delta) {
-  LookupKey lkey(key, seq);
+  LookupKey lkey(key, seq, moptions_.timestamp_size);
   Slice memkey = lkey.memtable_key();
 
   std::unique_ptr<MemTableRep::Iterator> iter(

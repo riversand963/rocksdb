@@ -38,7 +38,7 @@ Status CompactedDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle*,
   GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
                          GetContext::kNotFound, key, value, nullptr, nullptr,
                          nullptr, nullptr);
-  LookupKey lkey(key, kMaxSequenceNumber);
+  LookupKey lkey(key, kMaxSequenceNumber, immutable_db_options_.timestamp_size);
   files_.files[FindFile(key)].fd.table_reader->Get(options, lkey.internal_key(),
                                                    &get_context, nullptr);
   if (get_context.State() == GetContext::kFound) {
@@ -56,7 +56,8 @@ std::vector<Status> CompactedDBImpl::MultiGet(const ReadOptions& options,
     if (user_comparator_->Compare(key, ExtractUserKey(f.smallest_key)) < 0) {
       reader_list.push_back(nullptr);
     } else {
-      LookupKey lkey(key, kMaxSequenceNumber);
+      LookupKey lkey(key, kMaxSequenceNumber,
+                     immutable_db_options_.timestamp_size);
       f.fd.table_reader->Prepare(lkey.internal_key());
       reader_list.push_back(f.fd.table_reader);
     }
@@ -71,7 +72,8 @@ std::vector<Status> CompactedDBImpl::MultiGet(const ReadOptions& options,
       GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
                              GetContext::kNotFound, keys[idx], &pinnable_val,
                              nullptr, nullptr, nullptr, nullptr);
-      LookupKey lkey(keys[idx], kMaxSequenceNumber);
+      LookupKey lkey(keys[idx], kMaxSequenceNumber,
+                     immutable_db_options_.timestamp_size);
       r->Get(options, lkey.internal_key(), &get_context, nullptr);
       value.assign(pinnable_val.data(), pinnable_val.size());
       if (get_context.State() == GetContext::kFound) {

@@ -1410,7 +1410,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
   // First look in the memtable, then in the immutable memtable (if any).
   // s is both in/out. When in, s could either be OK or MergeInProgress.
   // merge_operands will contain the sequence of merges in the latter case.
-  LookupKey lkey(key, snapshot);
+  LookupKey lkey(key, snapshot, immutable_db_options_.timestamp_size);
   PERF_TIMER_STOP(get_snapshot_time);
 
   bool skip_memtable = (read_options.read_tier == kPersistedTier &&
@@ -1587,7 +1587,7 @@ std::vector<Status> DBImpl::MultiGet(
     Status& s = stat_list[i];
     std::string* value = &(*values)[i];
 
-    LookupKey lkey(keys[i], snapshot);
+    LookupKey lkey(keys[i], snapshot, immutable_db_options_.timestamp_size);
     auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family[i]);
     SequenceNumber max_covering_tombstone_seq = 0;
     auto mgd_iter = multiget_cf_data.find(cfh->cfd()->GetID());
@@ -3155,7 +3155,7 @@ Status DBImpl::GetLatestSequenceForKey(SuperVersion* sv, const Slice& key,
 
   ReadOptions read_options;
   SequenceNumber current_seq = versions_->LastSequence();
-  LookupKey lkey(key, current_seq);
+  LookupKey lkey(key, current_seq, immutable_db_options_.timestamp_size);
 
   *seq = kMaxSequenceNumber;
   *found_record_for_key = false;

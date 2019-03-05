@@ -124,6 +124,8 @@ DEFINE_int64(seed, 0,
              "Seed base for random number generators. "
              "When 0 it is deterministic.");
 
+DEFINE_int64(timestamp_size, 0, "Size of a timestamp");
+
 namespace rocksdb {
 
 namespace {
@@ -315,7 +317,8 @@ class ReadBenchmarkThread : public BenchmarkThread {
     std::string user_key;
     auto key = key_gen_->Next();
     PutFixed64(&user_key, key);
-    LookupKey lookup_key(user_key, *sequence_);
+    LookupKey lookup_key(user_key, *sequence_,
+                         static_cast<size_t>(FLAGS_timestamp_size));
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
     verify_args.found = false;
