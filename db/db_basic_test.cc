@@ -1128,6 +1128,47 @@ TEST_F(DBBasicTest, MultiGetMultiCFSnapshot) {
   }
 }
 
+class DBBasicTestWithTimestamp : public DBTestBase {
+ public:
+  DBBasicTestWithTimestamp(): DBTestBase("/db_basic_test_with_timestamp") {}
+
+ protected:
+  Slice EncodeTimestamp(uint64_t low, uint64_t high, std::string* ts) {
+    assert(nullptr != ts);
+    ts->clear();
+    PutFixed64(ts, low);
+    PutFixed64(ts, high);
+    assert(ts->size() == sizeof(low) + sizeof(high));
+    return Slice(*ts);
+  }
+};
+
+TEST_F(DBBasicTestWithTimestamp, WriteAndRead) {
+  Close();
+  Options options = CurrentOptions();
+  options.env = env_;
+  options.timestamp_size = 2 * sizeof(uint64_t);
+  Reopen(options);
+  std::string ts_str1;
+  Slice ts1 = EncodeTimestamp(0, 0, &ts_str1);
+  WriteOptions wopts;
+  wopts.timestamp = &ts1;
+  ASSERT_OK(db_->Put(wopts, "key1", "value1"));
+  ReadOptions ropts;
+  std::string ts_str2;
+  Slice ts2 = EncodeTimestamp(1, 0, &ts_str2);
+  ropts.timestamp = &ts2;
+  std::string value;
+  ASSERT_OK(db_->Get(ropts, "key1", &value));
+  ASSERT_EQ("value1", value);
+  ASSERT_OK(Flush(0 /*cf*/));
+  value.clear();
+  ASSERT_OK(db_->Get(ropts, "key1", &value));
+  ASSERT_EQ("value1", value);
+  Close();
+  Destroy(options);
+}
+
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {
