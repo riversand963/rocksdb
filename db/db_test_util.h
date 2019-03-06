@@ -124,7 +124,7 @@ class SpecialMemTableRep : public MemTableRep {
  public:
   explicit SpecialMemTableRep(Allocator* allocator, MemTableRep* memtable,
                               int num_entries_flush)
-      : MemTableRep(allocator),
+      : MemTableRep(allocator, memtable->GetTimestampSize()),
         memtable_(memtable),
         num_entries_flush_(num_entries_flush),
         num_entries_(0) {}
@@ -186,9 +186,11 @@ class SpecialSkipListFactory : public MemTableRepFactory {
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(
       const MemTableRep::KeyComparator& compare, Allocator* allocator,
-      const SliceTransform* transform, Logger* /*logger*/) override {
+      size_t ts_sz, const SliceTransform* transform,
+      Logger* /*logger*/) override {
     return new SpecialMemTableRep(
-        allocator, factory_.CreateMemTableRep(compare, allocator, transform, 0),
+        allocator,
+        factory_.CreateMemTableRep(compare, allocator, ts_sz, transform, 0),
         num_entries_flush_);
   }
   virtual const char* Name() const override { return "SkipListFactory"; }

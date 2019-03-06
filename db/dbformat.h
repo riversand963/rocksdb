@@ -140,6 +140,17 @@ inline Slice ExtractUserKey(const Slice& internal_key) {
   return Slice(internal_key.data(), internal_key.size() - 8);
 }
 
+inline Slice ExtractUserKeyAndStripTimestamp(const Slice& internal_key,
+                                             size_t ts_sz) {
+  assert(internal_key.size() >= 8 + ts_sz);
+  return Slice(internal_key.data(), internal_key.size() - 8 - ts_sz);
+}
+
+inline Slice StripTimestampFromUserKey(const Slice& user_key, size_t ts_sz) {
+  assert(user_key.size() >= ts_sz);
+  return Slice(user_key.data(), user_key.size() - ts_sz);
+}
+
 inline uint64_t ExtractInternalKeyFooter(const Slice& internal_key) {
   assert(internal_key.size() >= 8);
   const size_t n = internal_key.size();
@@ -310,9 +321,15 @@ class LookupKey {
 
   // Return the user key
   Slice user_key() const {
+    return Slice(kstart_, static_cast<size_t>(end_ - kstart_ - 8));
+  }
+
+  Slice user_key_without_ts() const {
     return Slice(kstart_,
                  static_cast<size_t>(end_ - kstart_ - 8 - timestamp_size_));
   }
+
+  size_t timestamp_size() const { return timestamp_size_; }
 
  private:
   // We construct a char array of the form:

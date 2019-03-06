@@ -78,7 +78,8 @@ class MemTableRep {
     virtual ~KeyComparator() { }
   };
 
-  explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
+  explicit MemTableRep(Allocator* allocator, size_t ts_sz)
+      : allocator_(allocator), timestamp_size_(ts_sz) {}
 
   // Allocate a buf of len size for storing key. The idea is that a
   // specific memtable representation knows its underlying data structure
@@ -242,12 +243,16 @@ class MemTableRep {
   // Default: true
   virtual bool IsSnapshotSupported() const { return true; }
 
+  size_t GetTimestampSize() const { return timestamp_size_; }
+
  protected:
   // When *key is an internal key concatenated with the value, returns the
   // user key.
   virtual Slice UserKey(const char* key) const;
 
   Allocator* allocator_;
+
+  size_t timestamp_size_;
 };
 
 // This is the base class for all factories that are used by RocksDB to create
@@ -257,13 +262,15 @@ class MemTableRepFactory {
   virtual ~MemTableRepFactory() {}
 
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         Allocator*, const SliceTransform*,
+                                         Allocator*, size_t ts_sz,
+                                         const SliceTransform*,
                                          Logger* logger) = 0;
   virtual MemTableRep* CreateMemTableRep(
       const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
-      const SliceTransform* slice_transform, Logger* logger,
+      size_t ts_sz, const SliceTransform* slice_transform, Logger* logger,
       uint32_t /* column_family_id */) {
-    return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
+    return CreateMemTableRep(key_cmp, allocator, ts_sz, slice_transform,
+                             logger);
   }
 
   virtual const char* Name() const = 0;
@@ -292,7 +299,8 @@ class SkipListFactory : public MemTableRepFactory {
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         Allocator*, const SliceTransform*,
+                                         Allocator*, size_t ts_sz,
+                                         const SliceTransform*,
                                          Logger* logger) override;
   virtual const char* Name() const override { return "SkipListFactory"; }
 
@@ -321,7 +329,8 @@ class VectorRepFactory : public MemTableRepFactory {
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         Allocator*, const SliceTransform*,
+                                         Allocator*, size_t ts_sz,
+                                         const SliceTransform*,
                                          Logger* logger) override;
 
   virtual const char* Name() const override {

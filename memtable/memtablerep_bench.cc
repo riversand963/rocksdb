@@ -615,7 +615,7 @@ int main(int argc, char** argv) {
   uint64_t sequence;
   auto createMemtableRep = [&] {
     sequence = 0;
-    return factory->CreateMemTableRep(key_comp, &arena,
+    return factory->CreateMemTableRep(key_comp, &arena, FLAGS_timestamp_size,
                                       options.prefix_extractor.get(),
                                       options.info_log.get());
   };

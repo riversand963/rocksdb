@@ -25,7 +25,8 @@ using namespace stl_wrappers;
 
 class VectorRep : public MemTableRep {
  public:
-  VectorRep(const KeyComparator& compare, Allocator* allocator, size_t count);
+  VectorRep(const KeyComparator& compare, Allocator* allocator, size_t ts_sz,
+            size_t count);
 
   // Insert key into the collection. (The caller will pack key and value into a
   // single buffer and pass that in as the parameter to Insert)
@@ -134,8 +135,8 @@ size_t VectorRep::ApproximateMemoryUsage() {
 }
 
 VectorRep::VectorRep(const KeyComparator& compare, Allocator* allocator,
-                     size_t count)
-    : MemTableRep(allocator),
+                     size_t ts_sz, size_t count)
+    : MemTableRep(allocator, ts_sz),
       bucket_(new Bucket()),
       immutable_(false),
       sorted_(false),
@@ -294,8 +295,8 @@ MemTableRep::Iterator* VectorRep::GetIterator(Arena* arena) {
 
 MemTableRep* VectorRepFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
-    const SliceTransform*, Logger* /*logger*/) {
-  return new VectorRep(compare, allocator, count_);
+    size_t ts_sz, const SliceTransform*, Logger* /*logger*/) {
+  return new VectorRep(compare, allocator, ts_sz, count_);
 }
 } // namespace rocksdb
 #endif  // ROCKSDB_LITE

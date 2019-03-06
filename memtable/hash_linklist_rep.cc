@@ -162,10 +162,10 @@ struct Node {
 class HashLinkListRep : public MemTableRep {
  public:
   HashLinkListRep(const MemTableRep::KeyComparator& compare,
-                  Allocator* allocator, const SliceTransform* transform,
-                  size_t bucket_size, uint32_t threshold_use_skiplist,
-                  size_t huge_page_tlb_size, Logger* logger,
-                  int bucket_entries_logging_threshold,
+                  Allocator* allocator, size_t ts_sz,
+                  const SliceTransform* transform, size_t bucket_size,
+                  uint32_t threshold_use_skiplist, size_t huge_page_tlb_size,
+                  Logger* logger, int bucket_entries_logging_threshold,
                   bool if_log_bucket_dist_when_flash);
 
   KeyHandle Allocate(const size_t len, char** buf) override;
@@ -494,10 +494,10 @@ class HashLinkListRep : public MemTableRep {
 
 HashLinkListRep::HashLinkListRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
-    const SliceTransform* transform, size_t bucket_size,
+    size_t ts_sz, const SliceTransform* transform, size_t bucket_size,
     uint32_t threshold_use_skiplist, size_t huge_page_tlb_size, Logger* logger,
     int bucket_entries_logging_threshold, bool if_log_bucket_dist_when_flash)
-    : MemTableRep(allocator),
+    : MemTableRep(allocator, ts_sz),
       bucket_size_(bucket_size),
       // Threshold to use skip list doesn't make sense if less than 3, so we
       // force it to be minimum of 3 to simplify implementation.
@@ -825,11 +825,11 @@ Node* HashLinkListRep::FindGreaterOrEqualInBucket(Node* head,
 
 MemTableRep* HashLinkListRepFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
-    const SliceTransform* transform, Logger* logger) {
-  return new HashLinkListRep(compare, allocator, transform, bucket_count_,
-                             threshold_use_skiplist_, huge_page_tlb_size_,
-                             logger, bucket_entries_logging_threshold_,
-                             if_log_bucket_dist_when_flash_);
+    size_t ts_sz, const SliceTransform* transform, Logger* logger) {
+  return new HashLinkListRep(
+      compare, allocator, ts_sz, transform, bucket_count_,
+      threshold_use_skiplist_, huge_page_tlb_size_, logger,
+      bucket_entries_logging_threshold_, if_log_bucket_dist_when_flash_);
 }
 
 MemTableRepFactory* NewHashLinkListRepFactory(

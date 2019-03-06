@@ -80,11 +80,12 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  : nullptr,
              mutable_cf_options.memtable_huge_page_size),
       table_(ioptions.memtable_factory->CreateMemTableRep(
-          comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
-          ioptions.info_log, column_family_id)),
-      range_del_table_(SkipListFactory().CreateMemTableRep(
-          comparator_, &arena_, nullptr /* transform */, ioptions.info_log,
+          comparator_, &arena_, ioptions.timestamp_size,
+          mutable_cf_options.prefix_extractor.get(), ioptions.info_log,
           column_family_id)),
+      range_del_table_(SkipListFactory().CreateMemTableRep(
+          comparator_, &arena_, ioptions.timestamp_size,
+          nullptr /* transform */, ioptions.info_log, column_family_id)),
       is_range_del_table_empty_(true),
       data_size_(0),
       num_entries_(0),
@@ -255,7 +256,7 @@ void MemTableRep::InsertConcurrently(KeyHandle /*handle*/) {
 
 Slice MemTableRep::UserKey(const char* key) const {
   Slice slice = GetLengthPrefixedSlice(key);
-  return Slice(slice.data(), slice.size() - 8);
+  return ExtractUserKeyAndStripTimestamp(slice, timestamp_size_);
 }
 
 KeyHandle MemTableRep::Allocate(const size_t len, char** buf) {
@@ -494,6 +495,8 @@ bool MemTable::Add(SequenceNumber s, ValueType type,
   p = EncodeVarint32(p, val_size);
   memcpy(p, value.data(), val_size);
   assert((unsigned)(p + val_size - buf) == (unsigned)encoded_len);
+  Slice key_without_ts =
+      StripTimestampFromUserKey(key, moptions_.timestamp_size);
   if (!allow_concurrent) {
     // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
@@ -522,10 +525,10 @@ bool MemTable::Add(SequenceNumber s, ValueType type,
     }
 
     if (bloom_filter_ && prefix_extractor_) {
-      bloom_filter_->Add(prefix_extractor_->Transform(key));
+      bloom_filter_->Add(prefix_extractor_->Transform(key_without_ts));
     }
     if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->Add(key);
+      bloom_filter_->Add(key_without_ts);
     }
 
     // The first sequence number inserted into the memtable
@@ -555,10 +558,11 @@ bool MemTable::Add(SequenceNumber s, ValueType type,
     }
 
     if (bloom_filter_ && prefix_extractor_) {
-      bloom_filter_->AddConcurrently(prefix_extractor_->Transform(key));
+      bloom_filter_->AddConcurrently(
+          prefix_extractor_->Transform(key_without_ts));
     }
     if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->AddConcurrently(key);
+      bloom_filter_->AddConcurrently(key_without_ts);
     }
 
     // atomically update first_seqno_ and earliest_seqno_.
@@ -632,7 +636,8 @@ static bool SaveValue(void* arg, const char* entry) {
   uint32_t key_length;
   const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
   if (s->mem->GetInternalKeyComparator().user_comparator()->Equal(
-          Slice(key_ptr, key_length - 8), s->key->user_key())) {
+          Slice(key_ptr, key_length - 8 - s->key->timestamp_size()),
+          s->key->user_key_without_ts())) {
     // Correct user key
     const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
     ValueType type;
@@ -762,7 +767,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
                  range_del_iter->MaxCoveringTombstoneSeqnum(key.user_key()));
   }
 
-  Slice user_key = key.user_key();
+  Slice user_key = key.user_key_without_ts();
   bool found_final_value = false;
   bool merge_in_progress = s->IsMergeInProgress();
   bool may_contain = true;

@@ -1136,8 +1136,8 @@ class DBBasicTestWithTimestamp : public DBTestBase {
   Slice EncodeTimestamp(uint64_t low, uint64_t high, std::string* ts) {
     assert(nullptr != ts);
     ts->clear();
-    PutFixed64(ts, low);
-    PutFixed64(ts, high);
+    PutFixed64(ts, std::numeric_limits<uint64_t>::max() - low);
+    PutFixed64(ts, std::numeric_limits<uint64_t>::max() - high);
     assert(ts->size() == sizeof(low) + sizeof(high));
     return Slice(*ts);
   }
@@ -1150,13 +1150,13 @@ TEST_F(DBBasicTestWithTimestamp, WriteAndRead) {
   options.timestamp_size = 2 * sizeof(uint64_t);
   Reopen(options);
   std::string ts_str1;
-  Slice ts1 = EncodeTimestamp(0, 0, &ts_str1);
+  Slice ts1 = EncodeTimestamp(1, 0, &ts_str1);
   WriteOptions wopts;
   wopts.timestamp = &ts1;
   ASSERT_OK(db_->Put(wopts, "key1", "value1"));
   ReadOptions ropts;
   std::string ts_str2;
-  Slice ts2 = EncodeTimestamp(1, 0, &ts_str2);
+  Slice ts2 = EncodeTimestamp(2, 1, &ts_str2);
   ropts.timestamp = &ts2;
   std::string value;
   ASSERT_OK(db_->Get(ropts, "key1", &value));

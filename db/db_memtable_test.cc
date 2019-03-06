@@ -23,7 +23,9 @@ class DBMemTableTest : public DBTestBase {
 class MockMemTableRep : public MemTableRep {
  public:
   explicit MockMemTableRep(Allocator* allocator, MemTableRep* rep)
-      : MemTableRep(allocator), rep_(rep), num_insert_with_hint_(0) {}
+      : MemTableRep(allocator, rep->GetTimestampSize()),
+        rep_(rep),
+        num_insert_with_hint_(0) {}
 
   KeyHandle Allocate(const size_t len, char** buf) override {
     return rep_->Allocate(len, buf);
@@ -68,23 +70,23 @@ class MockMemTableRep : public MemTableRep {
 class MockMemTableRepFactory : public MemTableRepFactory {
  public:
   MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator& cmp,
-                                 Allocator* allocator,
+                                 Allocator* allocator, size_t ts_sz,
                                  const SliceTransform* transform,
                                  Logger* logger) override {
     SkipListFactory factory;
     MemTableRep* skiplist_rep =
-        factory.CreateMemTableRep(cmp, allocator, transform, logger);
+        factory.CreateMemTableRep(cmp, allocator, ts_sz, transform, logger);
     mock_rep_ = new MockMemTableRep(allocator, skiplist_rep);
     return mock_rep_;
   }
 
   MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator& cmp,
-                                 Allocator* allocator,
+                                 Allocator* allocator, size_t ts_sz,
                                  const SliceTransform* transform,
                                  Logger* logger,
                                  uint32_t column_family_id) override {
     last_column_family_id_ = column_family_id;
-    return CreateMemTableRep(cmp, allocator, transform, logger);
+    return CreateMemTableRep(cmp, allocator, ts_sz, transform, logger);
   }
 
   const char* Name() const override { return "MockMemTableRepFactory"; }

@@ -24,9 +24,9 @@ namespace {
 class HashSkipListRep : public MemTableRep {
  public:
   HashSkipListRep(const MemTableRep::KeyComparator& compare,
-                  Allocator* allocator, const SliceTransform* transform,
-                  size_t bucket_size, int32_t skiplist_height,
-                  int32_t skiplist_branching_factor);
+                  Allocator* allocator, size_t ts_sz,
+                  const SliceTransform* transform, size_t bucket_size,
+                  int32_t skiplist_height, int32_t skiplist_branching_factor);
 
   void Insert(KeyHandle handle) override;
 
@@ -229,11 +229,11 @@ class HashSkipListRep : public MemTableRep {
 };
 
 HashSkipListRep::HashSkipListRep(const MemTableRep::KeyComparator& compare,
-                                 Allocator* allocator,
+                                 Allocator* allocator, size_t ts_sz,
                                  const SliceTransform* transform,
                                  size_t bucket_size, int32_t skiplist_height,
                                  int32_t skiplist_branching_factor)
-    : MemTableRep(allocator),
+    : MemTableRep(allocator, ts_sz),
       bucket_size_(bucket_size),
       skiplist_height_(skiplist_height),
       skiplist_branching_factor_(skiplist_branching_factor),
@@ -333,9 +333,10 @@ MemTableRep::Iterator* HashSkipListRep::GetDynamicPrefixIterator(Arena* arena) {
 
 MemTableRep* HashSkipListRepFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
-    const SliceTransform* transform, Logger* /*logger*/) {
-  return new HashSkipListRep(compare, allocator, transform, bucket_count_,
-                             skiplist_height_, skiplist_branching_factor_);
+    size_t ts_sz, const SliceTransform* transform, Logger* /*logger*/) {
+  return new HashSkipListRep(compare, allocator, ts_sz, transform,
+                             bucket_count_, skiplist_height_,
+                             skiplist_branching_factor_);
 }
 
 MemTableRepFactory* NewHashSkipListRepFactory(
