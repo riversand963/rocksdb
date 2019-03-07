@@ -2591,7 +2591,8 @@ bool BlockBasedTable::FullFilterKeyMayMatch(
   if (filter == nullptr || filter->IsBlockBased()) {
     return true;
   }
-  Slice user_key = ExtractUserKey(internal_key);
+  Slice user_key = ExtractUserKeyAndStripTimestamp(
+      internal_key, rep_->ioptions.timestamp_size);
   const Slice* const const_ikey_ptr = &internal_key;
   bool may_match = true;
   if (filter->whole_key_filtering()) {
@@ -2658,8 +2659,9 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
 
       bool not_exist_in_filter =
           filter != nullptr && filter->IsBlockBased() == true &&
-          !filter->KeyMayMatch(ExtractUserKey(key), prefix_extractor,
-                               handle.offset(), no_io);
+          !filter->KeyMayMatch(ExtractUserKeyAndStripTimestamp(
+                                   key, rep_->ioptions.timestamp_size),
+                               prefix_extractor, handle.offset(), no_io);
 
       if (not_exist_in_filter) {
         // Not found
@@ -2670,10 +2672,10 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
         break;
       } else {
         DataBlockIter biter;
-        NewDataBlockIterator<DataBlockIter>(
-            rep_, read_options, iiter->value(), &biter, false,
-            true /* key_includes_seq */, true /* index_key_is_full */,
-            get_context);
+        NewDataBlockIterator<DataBlockIter>(rep_, read_options, handle, &biter,
+                                            false, true /* key_includes_seq */,
+                                            true /* index_key_is_full */,
+                                            get_context);
 
         if (read_options.read_tier == kBlockCacheTier &&
             biter.status().IsIncomplete()) {
@@ -2689,7 +2691,9 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
         }
 
         bool may_exist = biter.SeekForGet(key);
-        if (!may_exist) {
+        // If user-specified timestamp is supported, we cannot end the search
+        // just because hash index lookup indicates the key+ts does not exist.
+        if (!may_exist && rep_->ioptions.timestamp_size == 0) {
           // HashSeek cannot find the key this block and the the iter is not
           // the end of the block, i.e. cannot be in the following blocks
           // either. In this case, the seek_key cannot be found, so we break

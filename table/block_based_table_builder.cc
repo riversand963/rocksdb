@@ -491,7 +491,8 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
     // Note: PartitionedFilterBlockBuilder requires key being added to filter
     // builder after being added to index builder.
     if (r->state == Rep::State::kUnbuffered && r->filter_builder != nullptr) {
-      r->filter_builder->Add(ExtractUserKey(key));
+      r->filter_builder->Add(
+          ExtractUserKeyAndStripTimestamp(key, r->ioptions.timestamp_size));
     }
 
     r->last_key.assign(key.data(), key.size());
