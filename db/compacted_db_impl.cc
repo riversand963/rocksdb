@@ -35,10 +35,11 @@ size_t CompactedDBImpl::FindFile(const Slice& key) {
 
 Status CompactedDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle*,
                             const Slice& key, PinnableSlice* value) {
+  size_t ts_sz = immutable_db_options_.timestamp_size;
   GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
-                         GetContext::kNotFound, key, value, nullptr, nullptr,
-                         nullptr, nullptr);
-  LookupKey lkey(key, kMaxSequenceNumber, immutable_db_options_.timestamp_size);
+                         GetContext::kNotFound, key, ts_sz, value, nullptr,
+                         nullptr, nullptr, nullptr);
+  LookupKey lkey(key, kMaxSequenceNumber, ts_sz);
   files_.files[FindFile(key)].fd.table_reader->Get(options, lkey.internal_key(),
                                                    &get_context, nullptr);
   if (get_context.State() == GetContext::kFound) {
@@ -69,11 +70,11 @@ std::vector<Status> CompactedDBImpl::MultiGet(const ReadOptions& options,
     if (r != nullptr) {
       PinnableSlice pinnable_val;
       std::string& value = (*values)[idx];
+      size_t ts_sz = immutable_db_options_.timestamp_size;
       GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
-                             GetContext::kNotFound, keys[idx], &pinnable_val,
-                             nullptr, nullptr, nullptr, nullptr);
-      LookupKey lkey(keys[idx], kMaxSequenceNumber,
-                     immutable_db_options_.timestamp_size);
+                             GetContext::kNotFound, keys[idx], ts_sz,
+                             &pinnable_val, nullptr, nullptr, nullptr, nullptr);
+      LookupKey lkey(keys[idx], kMaxSequenceNumber, ts_sz);
       r->Get(options, lkey.internal_key(), &get_context, nullptr);
       value.assign(pinnable_val.data(), pinnable_val.size());
       if (get_context.State() == GetContext::kFound) {
