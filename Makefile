@@ -392,6 +392,7 @@ util/build_version.cc: FORCE
 endif
 
 LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
+LIB_ASM = $(LIB_SOURCES:.cc=.ll)
 ifeq ($(HAVE_POWER8),1)
 LIB_CC_OBJECTS = $(LIB_SOURCES:.cc=.o)
 LIBOBJECTS += $(LIB_SOURCES_C:.c=.o)
@@ -1055,6 +1056,12 @@ TOOLLIBOBJECTS = $(TOOL_LIB_SOURCES:.cc=.o)
 unity_test: db/db_test.o db/db_test_util.o $(TESTHARNESS) $(TOOLLIBOBJECTS) unity.a
 	$(AM_LINK)
 	./unity_test
+
+# LLVM_LINK=/path/to/llvm-link USE_CLANG=1 OPT='-S -emit-llvm' make -j20 single_bc
+# /home/engshare/third-party2/llvm-fb/stable/gcc-5-glibc-2.23/03859b5/bin/opt -analyze -dot-callgraph
+# This will generate a single bc file
+single_bc: $(LIB_ASM)
+	$(LLVM_LINK) -S -v $(LIB_ASM) -o single.ll
 
 rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) unity.cc
 	build_tools/amalgamate.py -I. -i./include unity.cc -x include/rocksdb/c.h -H rocksdb.h -o rocksdb.cc
@@ -1970,6 +1977,9 @@ DEPFILES = $(all_sources:.cc=.cc.d)
 %.cc.d: %.cc
 	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' "$<" -o '$@'
+
+%.ll: %.cc
+	@$(CXX) -S -emit-llvm $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $< -o $@
 
 ifeq ($(HAVE_POWER8),1)
 DEPFILES_C = $(LIB_SOURCES_C:.c=.c.d)
