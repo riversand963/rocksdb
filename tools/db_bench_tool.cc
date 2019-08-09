@@ -420,6 +420,9 @@ DEFINE_double(cache_high_pri_pool_ratio, 0.0,
 DEFINE_bool(use_clock_cache, false,
             "Replace default LRU block cache with clock cache.");
 
+DEFINE_bool(cache_strict_capacity_limit, false,
+            "If set, insertion to cache will fail when cache is full.");
+
 DEFINE_int64(simcache_size, -1,
              "Number of bytes to use as a simcache of "
              "uncompressed data. Nagative value disables simcache.");
@@ -2415,7 +2418,7 @@ class Benchmark {
     } else {
       return NewLRUCache(
           static_cast<size_t>(capacity), FLAGS_cache_numshardbits,
-          false /*strict_capacity_limit*/, FLAGS_cache_high_pri_pool_ratio);
+          FLAGS_cache_strict_capacity_limit, FLAGS_cache_high_pri_pool_ratio);
     }
   }
 
