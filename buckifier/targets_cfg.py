@@ -88,6 +88,7 @@ ROCKSDB_ARCH_PREPROCESSOR_FLAGS = {
 build_mode = read_config("fbcode", "build_mode")
 
 is_opt_mode = build_mode.startswith("opt")
+is_dev_mode = (not build_mode.startswith("dev"))
 
 # -DNDEBUG is added by default in opt mode in fbcode. But adding it twice
 # doesn't harm and avoid forgetting to add it.
@@ -168,6 +169,6 @@ ROCKS_TESTS = [
         test_name = test_name,
     )
     for test_name, test_cc, parallelism, extra_deps, extra_compiler_flags in ROCKS_TESTS
-    if not is_opt_mode
+    if not is_opt_mode and (len(extra_deps) == 0 or is_dbg_mode)
 ]
 """
