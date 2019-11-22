@@ -18,6 +18,7 @@
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/utilities/db_ttl.h"
 #include "test_util/testharness.h"
+#include "util/coding.h"
 #include "utilities/merge_operators.h"
 
 namespace rocksdb {
@@ -296,6 +297,68 @@ void testCounters(Counters& counters, DB* db, bool test_compaction) {
   }
 }
 
+void testCountersWithFlushAndCompaction(Counters& counters, DB* db) {
+  ASSERT_OK(db->Put({}, "1", "1"));
+  ASSERT_OK(db->Flush(FlushOptions()));
+
+  std::atomic<int> cnt{0};
+  const auto get_thread_id = [&cnt]() {
+    thread_local int thread_id{cnt++};
+    return thread_id;
+  };
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply::WriterIsWaiting", [&](void* arg) {
+        auto* mtx = reinterpret_cast<InstrumentedMutex*>(arg);
+        auto thread_id = get_thread_id();
+        mtx->AssertHeld();
+        mtx->Unlock();
+        if (thread_id == 0) {
+          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread0:0");
+          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread0:1");
+        }
+        if (thread_id == 1) {
+          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread1:0");
+          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread1:1");
+        }
+        mtx->Lock();
+      });
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"testCountersWithFlushAndCompaction:thread0:0",
+        "testCountersWithFlushAndCompaction:BeforeIncCounter"},
+       {"testCountersWithFlushAndCompaction:thread1:0",
+        "testCountersWithFlushAndCompaction:thread0:1"},
+       {"testCountersWithFlushAndCompaction:AfterGet",
+        "testCountersWithFlushAndCompaction:thread1:1"},
+       {"DBImpl::BackgroundCompaction:AfterCompaction",
+        "testCountersWithFlushAndCompaction:BeforeVerification"}});
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  port::Thread thr([&]() {
+    ASSERT_OK(reinterpret_cast<DBImpl*>(db)->CompactRange(
+        CompactRangeOptions(), db->DefaultColumnFamily(), nullptr, nullptr));
+  });
+
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeIncCounter");
+  counters.add("test-key", 1);
+
+  FlushOptions flush_opts;
+  flush_opts.wait = false;
+  ASSERT_OK(db->Flush(flush_opts));
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeVerification");
+
+  std::string expected;
+  PutFixed64(&expected, 1);
+  std::string actual;
+  Status s = db->Get(ReadOptions(), "test-key", &actual);
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:AfterGet");
+  thr.join();
+  ASSERT_OK(s);
+  ASSERT_EQ(expected, actual);
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
 void testSuccessiveMerge(Counters& counters, size_t max_num_merges,
                          size_t num_merges) {
 
@@ -487,6 +550,18 @@ TEST_F(MergeTest, MergeDbTest) {
 TEST_F(MergeTest, MergeDbTtlTest) {
   runTest(test::PerThreadDBPath("merge_testdbttl"),
           true);  // Run test on TTL database
+}
+
+TEST_F(MergeTest, MyTest) {
+  const std::string dbname = test::PerThreadDBPath("my_test");
+  {
+    auto db = OpenDb(dbname);
+    {
+      MergeBasedCounters counters(db, 0);
+      testCountersWithFlushAndCompaction(counters, db.get());
+    }
+  }
+  DestroyDB(dbname, Options());
 }
 #endif  // !ROCKSDB_LITE
 
