@@ -308,51 +308,78 @@ void testCountersWithFlushAndCompaction(Counters& counters, DB* db) {
   };
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->SetCallBack(
-      "VersionSet::LogAndApply::WriterIsWaiting", [&](void* arg) {
-        auto* mtx = reinterpret_cast<InstrumentedMutex*>(arg);
-        auto thread_id = get_thread_id();
-        mtx->AssertHeld();
-        mtx->Unlock();
-        if (thread_id == 0) {
-          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread0:0");
-          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread0:1");
+      "VersionSet::LogAndApply:BeforeWriterWaiting", [&](void* /*arg*/) {
+        int thread_id = get_thread_id();
+        if (1 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::bg_compact_thread:0");
+        } else if (2 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::bg_flush_thread:0");
         }
-        if (thread_id == 1) {
-          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread1:0");
-          TEST_SYNC_POINT("testCountersWithFlushAndCompaction:thread1:1");
-        }
-        mtx->Lock();
       });
-  SyncPoint::GetInstance()->LoadDependency(
-      {{"testCountersWithFlushAndCompaction:thread0:0",
-        "testCountersWithFlushAndCompaction:BeforeIncCounter"},
-       {"testCountersWithFlushAndCompaction:thread1:0",
-        "testCountersWithFlushAndCompaction:thread0:1"},
-       {"testCountersWithFlushAndCompaction:AfterGet",
-        "testCountersWithFlushAndCompaction:thread1:1"},
-       {"DBImpl::BackgroundCompaction:AfterCompaction",
-        "testCountersWithFlushAndCompaction:BeforeVerification"}});
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply:WriteManifest", [&](void* /*arg*/) {
+        int thread_id = get_thread_id();
+        if (0 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::set_options_thread:0");
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::set_options_thread:1");
+        }
+      });
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply:WakeUpAndDone", [&](void* arg) {
+        auto* mutex = reinterpret_cast<InstrumentedMutex*>(arg);
+        mutex->AssertHeld();
+        int thread_id = get_thread_id();
+        ASSERT_EQ(2, thread_id);
+        mutex->Unlock();
+        TEST_SYNC_POINT(
+            "testCountersWithFlushAndCompaction::bg_flush_thread:1");
+        TEST_SYNC_POINT(
+            "testCountersWithFlushAndCompaction::bg_flush_thread:2");
+        mutex->Lock();
+      });
+  SyncPoint::GetInstance()->LoadDependency({
+      {"testCountersWithFlushAndCompaction::set_options_thread:0",
+       "testCountersWithCompactionAndFlush:BeforeCompact"},
+      {"testCountersWithFlushAndCompaction::bg_compact_thread:0",
+       "testCountersWithFlushAndCompaction:BeforeIncCounters"},
+      {"testCountersWithFlushAndCompaction::bg_flush_thread:0",
+       "testCountersWithFlushAndCompaction::set_options_thread:1"},
+      {"testCountersWithFlushAndCompaction::bg_flush_thread:1",
+       "testCountersWithFlushAndCompaction:BeforeVerification"},
+      {"testCountersWithFlushAndCompaction:AfterGet",
+       "testCountersWithFlushAndCompaction::bg_flush_thread:2"},
+  });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  port::Thread thr([&]() {
+  port::Thread set_options_thread([&]() {
+    ASSERT_OK(reinterpret_cast<DBImpl*>(db)->SetOptions(
+        {{"disable_auto_compactions", "false"}}));
+  });
+  TEST_SYNC_POINT("testCountersWithCompactionAndFlush:BeforeCompact");
+  port::Thread compact_thread([&]() {
     ASSERT_OK(reinterpret_cast<DBImpl*>(db)->CompactRange(
         CompactRangeOptions(), db->DefaultColumnFamily(), nullptr, nullptr));
   });
 
-  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeIncCounter");
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeIncCounters");
   counters.add("test-key", 1);
 
   FlushOptions flush_opts;
   flush_opts.wait = false;
   ASSERT_OK(db->Flush(flush_opts));
-  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeVerification");
 
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeVerification");
   std::string expected;
   PutFixed64(&expected, 1);
   std::string actual;
   Status s = db->Get(ReadOptions(), "test-key", &actual);
   TEST_SYNC_POINT("testCountersWithFlushAndCompaction:AfterGet");
-  thr.join();
+  set_options_thread.join();
+  compact_thread.join();
   ASSERT_OK(s);
   ASSERT_EQ(expected, actual);
   SyncPoint::GetInstance()->DisableProcessing();
@@ -552,8 +579,9 @@ TEST_F(MergeTest, MergeDbTtlTest) {
           true);  // Run test on TTL database
 }
 
-TEST_F(MergeTest, MyTest) {
-  const std::string dbname = test::PerThreadDBPath("my_test");
+TEST_F(MergeTest, MergeWithCompactionAndFlush) {
+  const std::string dbname =
+      test::PerThreadDBPath("merge_with_compaction_and_flush");
   {
     auto db = OpenDb(dbname);
     {
