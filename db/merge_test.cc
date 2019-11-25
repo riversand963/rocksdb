@@ -98,7 +98,6 @@ std::shared_ptr<DB> OpenDb(const std::string& dbname, const bool ttl = false,
     std::cerr << s.ToString() << std::endl;
     assert(false);
   }
-  db->GetEnv()->SetBackgroundThreads(2, Env::HIGH);
   return std::shared_ptr<DB>(db);
 }
 
@@ -299,87 +298,92 @@ void testCounters(Counters& counters, DB* db, bool test_compaction) {
 }
 
 void testCountersWithFlushAndCompaction(Counters& counters, DB* db) {
-  FlushOptions o;
-  o.wait = true;
+  ASSERT_OK(db->Put({}, "1", "1"));
+  ASSERT_OK(db->Flush(FlushOptions()));
 
-  // add some data, therefore we can trigger compaction
-  db->Put({}, "1", "1");
-  db->Flush(o);
-
-  // wait background job finished
-  auto dbfull = reinterpret_cast<DBImpl*>(db);
-  dbfull->TEST_WaitForCompact(true);
-
-  std::shared_ptr<std::atomic<bool>> verified(new std::atomic<bool>(false));
   std::atomic<int> cnt{0};
-  auto get_thread_id = [&cnt]() {
+  const auto get_thread_id = [&cnt]() {
     thread_local int thread_id{cnt++};
     return thread_id;
   };
-
-  std::atomic<bool> compaction_thread_reach_sync_point{false};
-  std::atomic<bool> compaction_finished{false};
-  rocksdb::SyncPoint::GetInstance()->SetCallBack(
-      "VersionSet::LogAndApply::WriterIsWaiting", [&, verified](void* arg) {
-        auto* mtx = reinterpret_cast<InstrumentedMutex*>(arg);
-        auto thread_id = get_thread_id();
-        // condition variable is fine to be false-postive
-        // it is always legal to wake up and do nothing
-        while (!*verified) {
-          mtx->AssertHeld();
-          mtx->Unlock();
-          db->GetEnv()->SleepForMicroseconds(100);
-          mtx->Lock();
-
-          // I am 100% sure the leader is thread - 0 and there are 2 working
-          // background threads
-          if (thread_id == 0) {
-            compaction_thread_reach_sync_point = true;
-          }
-          if (thread_id == 0 && cnt == 2) {
-            break;
-          }
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply:BeforeWriterWaiting", [&](void* /*arg*/) {
+        int thread_id = get_thread_id();
+        if (1 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::bg_compact_thread:0");
+        } else if (2 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::bg_flush_thread:0");
         }
       });
-
-  rocksdb::SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::BackgroundCompaction:AfterCompaction", [&](void* /*arg*/) {
-        compaction_finished = true;
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply:WriteManifest", [&](void* /*arg*/) {
+        int thread_id = get_thread_id();
+        if (0 == thread_id) {
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::set_options_thread:0");
+          TEST_SYNC_POINT(
+              "testCountersWithFlushAndCompaction::set_options_thread:1");
+        }
       });
+  SyncPoint::GetInstance()->SetCallBack(
+      "VersionSet::LogAndApply:WakeUpAndDone", [&](void* arg) {
+        auto* mutex = reinterpret_cast<InstrumentedMutex*>(arg);
+        mutex->AssertHeld();
+        int thread_id = get_thread_id();
+        ASSERT_EQ(2, thread_id);
+        mutex->Unlock();
+        TEST_SYNC_POINT(
+            "testCountersWithFlushAndCompaction::bg_flush_thread:1");
+        TEST_SYNC_POINT(
+            "testCountersWithFlushAndCompaction::bg_flush_thread:2");
+        mutex->Lock();
+      });
+  SyncPoint::GetInstance()->LoadDependency({
+      {"testCountersWithFlushAndCompaction::set_options_thread:0",
+       "testCountersWithCompactionAndFlush:BeforeCompact"},
+      {"testCountersWithFlushAndCompaction::bg_compact_thread:0",
+       "testCountersWithFlushAndCompaction:BeforeIncCounters"},
+      {"testCountersWithFlushAndCompaction::bg_flush_thread:0",
+       "testCountersWithFlushAndCompaction::set_options_thread:1"},
+      {"testCountersWithFlushAndCompaction::bg_flush_thread:1",
+       "testCountersWithFlushAndCompaction:BeforeVerification"},
+      {"testCountersWithFlushAndCompaction:AfterGet",
+       "testCountersWithFlushAndCompaction::bg_flush_thread:2"},
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
 
-  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
-  std::thread t([&] {
-    dbfull->CompactRange(CompactRangeOptions(), db->DefaultColumnFamily(),
-                         nullptr, nullptr);
+  port::Thread set_options_thread([&]() {
+    ASSERT_OK(reinterpret_cast<DBImpl*>(db)->SetOptions(
+        {{"disable_auto_compactions", "false"}}));
+  });
+  TEST_SYNC_POINT("testCountersWithCompactionAndFlush:BeforeCompact");
+  port::Thread compact_thread([&]() {
+    ASSERT_OK(reinterpret_cast<DBImpl*>(db)->CompactRange(
+        CompactRangeOptions(), db->DefaultColumnFamily(), nullptr, nullptr));
   });
 
-  // ensure the compaction job gets executed eariler than the incoming flush job
-  while (!compaction_thread_reach_sync_point) {
-    db->GetEnv()->SleepForMicroseconds(100);
-  }
-
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeIncCounters");
   counters.add("test-key", 1);
 
-  o.wait = false;
-  db->Flush(o);
+  FlushOptions flush_opts;
+  flush_opts.wait = false;
+  ASSERT_OK(db->Flush(flush_opts));
 
-  while (!compaction_finished) {
-    db->GetEnv()->SleepForMicroseconds(100);
-  }
-
-  std::string val;
-  std::string actual_val;
-  PutFixed64(&actual_val, 1);
-  db->Get(ReadOptions(), "test-key", &val);
-  if (val != actual_val) {
-    verified->store(true);
-    rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
-  }
-  ASSERT_EQ(val, actual_val);
-
-  t.join();
-  verified->store(true);
-  rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:BeforeVerification");
+  std::string expected;
+  PutFixed64(&expected, 1);
+  std::string actual;
+  Status s = db->Get(ReadOptions(), "test-key", &actual);
+  TEST_SYNC_POINT("testCountersWithFlushAndCompaction:AfterGet");
+  set_options_thread.join();
+  compact_thread.join();
+  ASSERT_OK(s);
+  ASSERT_EQ(expected, actual);
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 void testSuccessiveMerge(Counters& counters, size_t max_num_merges,
@@ -565,19 +569,6 @@ void runTest(const std::string& dbname, const bool use_ttl = false) {
   */
 }
 
-void runBadSuperVersion(const std::string& dbname) {
-
-  {
-    auto db = OpenDb(dbname, false);
-
-    {
-      MergeBasedCounters counters(db, 0);
-      testCountersWithFlushAndCompaction(counters, db.get());
-    }
-  }
-  DestroyDB(dbname, Options());
-}
-
 TEST_F(MergeTest, MergeDbTest) {
   runTest(test::PerThreadDBPath("merge_testdb"));
 }
@@ -588,10 +579,18 @@ TEST_F(MergeTest, MergeDbTtlTest) {
           true);  // Run test on TTL database
 }
 
-TEST_F(MergeTest, BadSuperVersion) {
-  runBadSuperVersion(test::PerThreadDBPath("bad_super_version"));
+TEST_F(MergeTest, MergeWithCompactionAndFlush) {
+  const std::string dbname =
+      test::PerThreadDBPath("merge_with_compaction_and_flush");
+  {
+    auto db = OpenDb(dbname);
+    {
+      MergeBasedCounters counters(db, 0);
+      testCountersWithFlushAndCompaction(counters, db.get());
+    }
+  }
+  DestroyDB(dbname, Options());
 }
-
 #endif  // !ROCKSDB_LITE
 
 }  // namespace rocksdb
