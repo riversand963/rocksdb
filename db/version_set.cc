@@ -3956,6 +3956,9 @@ Status VersionSet::ProcessManifestWrites(
           DescriptorFileName(dbname_, pending_manifest_file_number_));
     }
   }
+  for (auto e : batch_edits) {
+    e->DoApplyCallback(s);
+  }
 
   pending_manifest_file_number_ = 0;
 

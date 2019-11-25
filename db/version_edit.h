@@ -297,6 +297,10 @@ class VersionEdit {
     deleted_files_.insert({level, file});
   }
 
+  void SetApplyCallback(std::function<void(const Status&)> callback) {
+    apply_callback_ = std::move(callback);
+  }
+
   // Number of edits
   size_t NumEntries() { return new_files_.size() + deleted_files_.size(); }
 
@@ -336,6 +340,9 @@ class VersionEdit {
   const DeletedFileSet& GetDeletedFiles() { return deleted_files_; }
   const std::vector<std::pair<int, FileMetaData>>& GetNewFiles() {
     return new_files_;
+  }
+  void DoApplyCallback(const Status& s) {
+    if (apply_callback_) { apply_callback_(s); }
   }
 
   void MarkAtomicGroup(uint32_t remaining_entries) {
@@ -377,6 +384,7 @@ class VersionEdit {
 
   DeletedFileSet deleted_files_;
   std::vector<std::pair<int, FileMetaData>> new_files_;
+  std::function<void(const Status&)> apply_callback_;
 
   // Each version edit record should have column_family_ set
   // If it's not set, it is default (0)
