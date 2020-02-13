@@ -391,6 +391,7 @@ class VersionEdit {
 
  private:
   friend class ReactiveVersionSet;
+  friend class VersionEditHandler;
   friend class VersionSet;
   friend class Version;
   friend class AtomicGroupReadBuffer;

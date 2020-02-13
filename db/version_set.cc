@@ -1202,28 +1202,6 @@ void LevelIterator::InitFileIterator(size_t new_file_index) {
 }
 }  // anonymous namespace
 
-// A wrapper of version builder which references the current version in
-// constructor and unref it in the destructor.
-// Both of the constructor and destructor need to be called inside DB Mutex.
-class BaseReferencedVersionBuilder {
- public:
-  explicit BaseReferencedVersionBuilder(ColumnFamilyData* cfd)
-      : version_builder_(new VersionBuilder(
-            cfd->current()->version_set()->file_options(), cfd->table_cache(),
-            cfd->current()->storage_info(), cfd->ioptions()->info_log)),
-        version_(cfd->current()) {
-    version_->Ref();
-  }
-  ~BaseReferencedVersionBuilder() {
-    version_->Unref();
-  }
-  VersionBuilder* version_builder() { return version_builder_.get(); }
-
- private:
-  std::unique_ptr<VersionBuilder> version_builder_;
-  Version* version_;
-};
-
 Status Version::GetTableProperties(std::shared_ptr<const TableProperties>* tp,
                                    const FileMetaData* file_meta,
                                    const std::string* fname) const {
@@ -4445,8 +4423,6 @@ Status VersionSet::Recover(
     reporter.status = &s;
     log::Reader reader(nullptr, std::move(manifest_file_reader), &reporter,
                        true /* checksum */, 0 /* log_number */);
-    Slice record;
-    std::string scratch;
     AtomicGroupReadBuffer read_buffer;
     s = ReadAndRecover(&reader, &read_buffer, cf_name_to_options,
                        column_families_not_found, builders,

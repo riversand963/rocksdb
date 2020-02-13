@@ -542,4 +542,17 @@ void VersionBuilder::MaybeAddFile(VersionStorageInfo* vstorage, int level,
   rep_->MaybeAddFile(vstorage, level, f);
 }
 
+BaseReferencedVersionBuilder::BaseReferencedVersionBuilder(
+    ColumnFamilyData* cfd)
+    : version_builder_(new VersionBuilder(
+          cfd->current()->version_set()->file_options(), cfd->table_cache(),
+          cfd->current()->storage_info(), cfd->ioptions()->info_log)),
+      version_(cfd->current()) {
+  version_->Ref();
+}
+
+BaseReferencedVersionBuilder::~BaseReferencedVersionBuilder() {
+  version_->Unref();
+}
+
 }  // namespace rocksdb

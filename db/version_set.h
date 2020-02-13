@@ -1059,6 +1059,7 @@ class VersionSet {
   struct ManifestWriter;
 
   friend class Version;
+  friend class VersionEditHandler;
   friend class DBImpl;
   friend class DBImplReadOnly;
 
