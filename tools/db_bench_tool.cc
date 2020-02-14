@@ -967,7 +967,7 @@ DEFINE_uint64(delayed_write_rate, 8388608u,
               "Limited bytes allowed to DB when soft_rate_limit or "
               "level0_slowdown_writes_trigger triggers");
 
-DEFINE_bool(enable_pipelined_write, true,
+DEFINE_bool(enable_pipelined_write, false,
             "Allow WAL and memtable writes to be pipelined");
 
 DEFINE_bool(unordered_write, false,
