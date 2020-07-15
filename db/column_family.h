@@ -508,6 +508,7 @@ class ColumnFamilyData {
 
  private:
   friend class ColumnFamilySet;
+  friend class VersionSet;
   static const uint32_t kDummyColumnFamilyDataId;
   ColumnFamilyData(uint32_t id, const std::string& name,
                    Version* dummy_versions, Cache* table_cache,
@@ -684,6 +685,7 @@ class ColumnFamilySet {
 
  private:
   friend class ColumnFamilyData;
+  friend class VersionSet;
   // helper function that gets called from cfd destructor
   // REQUIRES: DB mutex held
   void RemoveColumnFamily(ColumnFamilyData* cfd);

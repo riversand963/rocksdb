@@ -3662,33 +3662,6 @@ VersionSet::~VersionSet() {
   obsolete_files_.clear();
 }
 
-void VersionSet::Reset() {
-  if (column_family_set_) {
-    Cache* table_cache = column_family_set_->get_table_cache();
-    WriteBufferManager* wbm = column_family_set_->write_buffer_manager();
-    WriteController* wc = column_family_set_->write_controller();
-    column_family_set_.reset(new ColumnFamilySet(dbname_, db_options_,
-                                                 file_options_, table_cache,
-                                                 wbm, wc, block_cache_tracer_));
-  }
-  db_id_.clear();
-  next_file_number_.store(2);
-  min_log_number_to_keep_2pc_.store(0);
-  manifest_file_number_ = 0;
-  options_file_number_ = 0;
-  pending_manifest_file_number_ = 0;
-  last_sequence_.store(0);
-  last_allocated_sequence_.store(0);
-  last_published_sequence_.store(0);
-  prev_log_number_ = 0;
-  descriptor_log_.reset();
-  current_version_number_ = 0;
-  manifest_writers_.clear();
-  manifest_file_size_ = 0;
-  obsolete_files_.clear();
-  obsolete_manifests_.clear();
-}
-
 void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
                                Version* v) {
   // compute new compaction score
@@ -4808,24 +4781,40 @@ std::string ManifestPicker::GetNextManifest(uint64_t* number,
 
 Status VersionSet::TryRecover(
     const std::vector<ColumnFamilyDescriptor>& column_families, bool read_only,
-    const std::vector<std::string>& files_in_dbname, std::string* db_id,
-    bool* has_missing_table_file) {
-  ManifestPicker manifest_picker(dbname_, files_in_dbname);
+    const std::vector<std::string>& files_in_dbname, VersionSet& version_set,
+    std::string* db_id) {
+  const std::string& dbname = version_set.dbname_;
+  ManifestPicker manifest_picker(dbname, files_in_dbname);
   if (!manifest_picker.Valid()) {
-    return Status::Corruption("Cannot locate MANIFEST file in " + dbname_);
+    return Status::Corruption("Cannot locate MANIFEST file in " + dbname);
   }
-  Status s;
+  uint64_t manifest_file_num = 0;
   std::string manifest_path =
-      manifest_picker.GetNextManifest(&manifest_file_number_, nullptr);
+      manifest_picker.GetNextManifest(&manifest_file_num, nullptr);
+  const ImmutableDBOptions* const db_options = version_set.db_options_;
+  const FileOptions& file_options = version_set.file_options_;
+  Cache* const table_cache = version_set.column_family_set_->get_table_cache();
+  WriteBufferManager* const wbm =
+      version_set.column_family_set_->write_buffer_manager();
+  WriteController* const wc =
+      version_set.column_family_set_->write_controller();
+  BlockCacheTracer* const block_cache_tracer = version_set.block_cache_tracer_;
+  Status s;
   while (!manifest_path.empty()) {
-    s = TryRecoverFromOneManifest(manifest_path, column_families, read_only,
-                                  db_id, has_missing_table_file);
-    if (s.ok() || !manifest_picker.Valid()) {
+    std::unique_ptr<VersionSet> vset(
+        new VersionSet(dbname, db_options, file_options, table_cache, wbm, wc,
+                       block_cache_tracer));
+    vset->manifest_file_number_ = manifest_file_num;
+    s = vset->TryRecoverFromOneManifest(manifest_path, column_families,
+                                        read_only, db_id);
+    if (s.ok()) {
+      version_set.Merge(*vset);
+    }
+    if (!manifest_picker.Valid()) {
       break;
     }
-    Reset();
     manifest_path =
-        manifest_picker.GetNextManifest(&manifest_file_number_, nullptr);
+        manifest_picker.GetNextManifest(&manifest_file_num, nullptr);
   }
   return s;
 }
@@ -4833,7 +4822,7 @@ Status VersionSet::TryRecover(
 Status VersionSet::TryRecoverFromOneManifest(
     const std::string& manifest_path,
     const std::vector<ColumnFamilyDescriptor>& column_families, bool read_only,
-    std::string* db_id, bool* has_missing_table_file) {
+    std::string* db_id) {
   ROCKS_LOG_INFO(db_options_->info_log, "Trying to recover from manifest: %s\n",
                  manifest_path.c_str());
   std::unique_ptr<SequentialFileReader> manifest_file_reader;
@@ -4860,9 +4849,6 @@ Status VersionSet::TryRecoverFromOneManifest(
                                             const_cast<VersionSet*>(this));
 
   handler_pit.Iterate(reader, &s, db_id);
-
-  assert(nullptr != has_missing_table_file);
-  *has_missing_table_file = handler_pit.HasMissingFiles();
 
   return handler_pit.status();
 }
@@ -5941,6 +5927,122 @@ Status VersionSet::VerifyFileMetadata(const std::string& fpath,
     }
   }
   return status;
+}
+
+void VersionSet::Merge(VersionSet& rhs) {
+  ColumnFamilySet* cf_set_self = column_family_set_.get();
+  ColumnFamilySet* cf_set_other = rhs.column_family_set_.get();
+  assert(cf_set_self);
+  assert(cf_set_other);
+  if (env_ != rhs.env_ || fs_ != rhs.fs_ || dbname_.compare(rhs.dbname_) != 0 ||
+      db_options_ != rhs.db_options_ ||
+      cf_set_self->write_buffer_manager() !=
+          cf_set_other->write_buffer_manager() ||
+      cf_set_self->write_controller() != cf_set_other->write_controller() ||
+      block_cache_tracer_ != rhs.block_cache_tracer_) {
+    assert(false);
+    return;
+  }
+  uint64_t next_file_num = rhs.next_file_number_.load();
+  if (next_file_num > next_file_number_.load()) {
+    next_file_number_.store(next_file_num);
+  }
+  if (rhs.manifest_file_number_ > manifest_file_number_) {
+    manifest_file_number_ = rhs.manifest_file_number_;
+    manifest_file_size_ = rhs.manifest_file_size_;
+  }
+  if (rhs.options_file_number_ > options_file_number_) {
+    options_file_number_ = rhs.options_file_number_;
+  }
+  uint64_t last_seq = rhs.last_sequence_.load();
+  if (last_seq > last_sequence_) {
+    last_sequence_.store(last_seq);
+  }
+  uint64_t last_allocated_seq = rhs.last_allocated_sequence_.load();
+  if (last_allocated_seq > last_allocated_sequence_.load()) {
+    last_allocated_sequence_.store(last_allocated_seq);
+  }
+  uint64_t last_published_seq = rhs.last_published_sequence_.load();
+  if (last_published_seq > last_published_sequence_.load()) {
+    last_published_sequence_.store(last_published_seq);
+  }
+  if (rhs.prev_log_number_ > prev_log_number_) {
+    prev_log_number_ = rhs.prev_log_number_;
+  }
+  if (rhs.current_version_number_ > current_version_number_) {
+    current_version_number_ = rhs.current_version_number_;
+  }
+  std::vector<ColumnFamilyData*> other_cfds;
+  for (auto& elem : cf_set_other->column_family_data_) {
+    other_cfds.push_back(elem.second);
+  }
+  size_t pos = 0;
+  for (size_t i = 0; i < other_cfds.size(); ++i) {
+    if (other_cfds[i]->GetName().compare(kDefaultColumnFamilyName) == 0) {
+      pos = i;
+    }
+  }
+  if (pos) {
+    auto* tmp = other_cfds[0];
+    other_cfds[0] = other_cfds[pos];
+    other_cfds[pos] = tmp;
+  }
+  for (ColumnFamilyData* other_cfd : other_cfds) {
+    assert(other_cfd);
+    Version* other_curr = other_cfd->current();
+    const VersionStorageInfo* const other_vstorage = other_curr->storage_info();
+    assert(other_vstorage);
+    // Skip dummy column family
+    if (other_cfd->GetName().compare("") == 0) {
+      continue;
+    }
+    ColumnFamilyData* self_cfd =
+        cf_set_self->GetColumnFamily(other_cfd->GetID());
+    assert(!self_cfd || self_cfd->current());
+    Version* self_curr = self_cfd ? self_cfd->current() : nullptr;
+    const VersionStorageInfo* const self_vstorage =
+        self_curr ? self_curr->storage_info() : nullptr;
+    if (!self_cfd) {
+      ColumnFamilyData* other_cfd_prev = other_cfd->prev_;
+      ColumnFamilyData* other_cfd_next = other_cfd->next_;
+      other_cfd_prev->next_ = other_cfd_next;
+      other_cfd_next->prev_ = other_cfd_prev;
+
+      other_cfd->next_ = cf_set_self->dummy_cfd_;
+      other_cfd->prev_ = cf_set_self->dummy_cfd_->prev_;
+      cf_set_self->dummy_cfd_->prev_->next_ = other_cfd;
+      cf_set_self->dummy_cfd_->prev_ = other_cfd;
+    } else if (self_vstorage->num_non_empty_levels() == 0) {
+      ColumnFamilyData* other_cfd_prev = other_cfd->prev_;
+      ColumnFamilyData* other_cfd_next = other_cfd->next_;
+      ColumnFamilyData* self_cfd_prev = self_cfd->prev_;
+      ColumnFamilyData* self_cfd_next = self_cfd->next_;
+      self_cfd->prev_->next_ = other_cfd;
+      self_cfd->next_->prev_ = other_cfd;
+      other_cfd->prev_ = self_cfd_prev;
+      other_cfd->next_ = self_cfd_next;
+      other_cfd_prev->next_ = other_cfd_next;
+      other_cfd_next->prev_ = other_cfd_prev;
+      self_cfd->prev_ = self_cfd;
+      self_cfd->next_ = self_cfd;
+      other_cfd->column_family_set_ = self_cfd->column_family_set_;
+    } else {
+      continue;
+    }
+    cf_set_other->RemoveColumnFamily(other_cfd);
+    other_cfd->column_family_set_ = cf_set_self;
+    cf_set_self->column_families_[other_cfd->GetName()] = other_cfd->GetID();
+    cf_set_self->column_family_data_[other_cfd->GetID()] = other_cfd;
+    Version* version = other_cfd->dummy_versions_;
+    do {
+      version->vset_ = this;
+      version = version->next_;
+    } while (version != other_cfd->dummy_versions_);
+    if (other_cfd->GetName().compare(kDefaultColumnFamilyName) == 0) {
+      cf_set_self->default_cfd_cache_ = other_cfd;
+    }
+    delete self_cfd;
+  }
 }
 
 ReactiveVersionSet::ReactiveVersionSet(const std::string& dbname,

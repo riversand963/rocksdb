@@ -458,17 +458,13 @@ Status DBImpl::Recover(
   }
   assert(db_id_.empty());
   Status s;
-  bool missing_table_file = false;
   if (!immutable_db_options_.best_efforts_recovery) {
     s = versions_->Recover(column_families, read_only, &db_id_);
   } else {
     assert(!files_in_dbname.empty());
-    s = versions_->TryRecover(column_families, read_only, files_in_dbname,
-                              &db_id_, &missing_table_file);
+    s = VersionSet::TryRecover(column_families, read_only, files_in_dbname,
+                               *versions_, &db_id_);
     if (s.ok()) {
-      // TryRecover may delete previous column_family_set_.
-      column_family_memtables_.reset(
-          new ColumnFamilyMemTablesImpl(versions_->GetColumnFamilySet()));
       s = FinishBestEffortsRecovery();
     }
   }

@@ -961,17 +961,17 @@ class VersionSet {
   Status Recover(const std::vector<ColumnFamilyDescriptor>& column_families,
                  bool read_only = false, std::string* db_id = nullptr);
 
-  Status TryRecover(const std::vector<ColumnFamilyDescriptor>& column_families,
-                    bool read_only,
-                    const std::vector<std::string>& files_in_dbname,
-                    std::string* db_id, bool* has_missing_table_file);
+  static Status TryRecover(
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      bool read_only, const std::vector<std::string>& files_in_dbname,
+      VersionSet& version_set, std::string* db_id);
 
   // Try to recover the version set to the most recent consistent state
   // recorded in the specified manifest.
   Status TryRecoverFromOneManifest(
       const std::string& manifest_path,
       const std::vector<ColumnFamilyDescriptor>& column_families,
-      bool read_only, std::string* db_id, bool* has_missing_table_file);
+      bool read_only, std::string* db_id);
 
   // Reads a manifest file and returns a list of column families in
   // column_families.
@@ -1211,8 +1211,6 @@ class VersionSet {
     }
   };
 
-  void Reset();
-
   // Returns approximated offset of a key in a file for a given version.
   uint64_t ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
                                const Slice& key, TableReaderCaller caller);
@@ -1328,6 +1326,8 @@ class VersionSet {
   void LogAndApplyCFHelper(VersionEdit* edit);
   Status LogAndApplyHelper(ColumnFamilyData* cfd, VersionBuilder* b,
                            VersionEdit* edit, InstrumentedMutex* mu);
+
+  void Merge(VersionSet& rhs);
 };
 
 // ReactiveVersionSet represents a collection of versions of the column

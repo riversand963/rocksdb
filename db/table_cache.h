@@ -219,7 +219,7 @@ class TableCache {
                        size_t prefix_size, GetContext* get_context);
 
   const ImmutableCFOptions& ioptions_;
-  const FileOptions& file_options_;
+  const FileOptions file_options_;
   Cache* const cache_;
   std::string row_cache_id_;
   bool immortal_tables_;
