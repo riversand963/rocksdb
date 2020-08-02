@@ -41,6 +41,8 @@ class LookupKey {
     return Slice(kstart_, static_cast<size_t>(end_ - kstart_ - 8));
   }
 
+  SequenceNumber sequence() const;
+
  private:
   // We construct a char array of the form:
   //    klength  varint32               <-- start_

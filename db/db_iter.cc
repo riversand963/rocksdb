@@ -74,7 +74,8 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       start_seqnum_(read_options.iter_start_seqnum),
       timestamp_ub_(read_options.timestamp),
       timestamp_lb_(read_options.iter_start_ts),
-      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0) {
+      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
+      snapshot_(read_options.snapshot) {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();
@@ -1142,7 +1143,6 @@ bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
   bool visible_by_seq = (read_callback_ == nullptr)
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
-
   bool visible_by_ts =
       (timestamp_ub_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_ub_) <= 0) &&
@@ -1152,7 +1152,13 @@ bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
   if (more_recent) {
     *more_recent = !visible_by_seq;
   }
-  return visible_by_seq && visible_by_ts;
+  if (timestamp_size_ == 0) {
+    return visible_by_seq;
+  } else if (snapshot_) {
+    return visible_by_seq && visible_by_ts;
+  } else {
+    return visible_by_ts;
+  }
 }
 
 void DBIter::SetSavedKeyToSeekTarget(const Slice& target) {

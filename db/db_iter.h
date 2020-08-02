@@ -350,6 +350,7 @@ class DBIter final : public Iterator {
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
   const size_t timestamp_size_;
+  const Snapshot* snapshot_;
 };
 
 // Return a new iterator that converts internal keys (yielded by

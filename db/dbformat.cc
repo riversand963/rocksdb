@@ -185,6 +185,15 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   end_ = dst;
 }
 
+SequenceNumber LookupKey::sequence() const {
+  assert(end_ - 8 >= kstart_);
+  uint64_t seq_and_type = DecodeFixed64(end_ - 8);
+  ValueType type;
+  uint64_t seq;
+  UnPackSequenceAndType(seq_and_type, &seq, &type);
+  return static_cast<SequenceNumber>(seq);
+}
+
 void IterKey::EnlargeBuffer(size_t key_size) {
   // If size is smaller than buffer size, continue using current buffer,
   // or the static allocated one, as default

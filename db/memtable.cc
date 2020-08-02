@@ -19,6 +19,7 @@
 #include "db/pinned_iterators_manager.h"
 #include "db/range_tombstone_fragmenter.h"
 #include "db/read_callback.h"
+#include "db/snapshot_impl.h"
 #include "memory/arena.h"
 #include "memory/memory_usage.h"
 #include "monitoring/perf_context_imp.h"
@@ -623,6 +624,7 @@ struct Saver {
   Env* env_;
   ReadCallback* callback_;
   bool* is_blob_index;
+  const ReadOptions* read_opts;
 
   bool CheckCallback(SequenceNumber _seq) {
     if (callback_) {
@@ -668,6 +670,15 @@ static bool SaveValue(void* arg, const char* entry) {
     // If the value is not in the snapshot, skip it
     if (!s->CheckCallback(seq)) {
       return true;  // to continue to the next seq
+    }
+
+    assert(s->read_opts);
+    if (ts_sz > 0) {
+      const ReadOptions& read_opts = *(s->read_opts);
+      const Snapshot* ss = read_opts.snapshot;
+      if (ss && ss->GetSequenceNumber() < seq) {
+        return true;  // continue to next seq
+      }
     }
 
     s->seq = seq;
@@ -842,9 +853,9 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
     if (bloom_filter_) {
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
-    GetFromTable(key, *max_covering_tombstone_seq, do_merge, callback,
-                 is_blob_index, value, timestamp, s, merge_context, seq,
-                 &found_final_value, &merge_in_progress);
+    GetFromTable(key, read_opts, *max_covering_tombstone_seq, do_merge,
+                 callback, is_blob_index, value, timestamp, s, merge_context,
+                 seq, &found_final_value, &merge_in_progress);
   }
 
   // No change to value, since we have not yet found a Put/Delete
@@ -855,7 +866,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
   return found_final_value;
 }
 
-void MemTable::GetFromTable(const LookupKey& key,
+void MemTable::GetFromTable(const LookupKey& key, const ReadOptions& read_opts,
                             SequenceNumber max_covering_tombstone_seq,
                             bool do_merge, ReadCallback* callback,
                             bool* is_blob_index, std::string* value,
@@ -881,6 +892,7 @@ void MemTable::GetFromTable(const LookupKey& key,
   saver.callback_ = callback;
   saver.is_blob_index = is_blob_index;
   saver.do_merge = do_merge;
+  saver.read_opts = &read_opts;
   table_->Get(key, &saver, SaveValue);
   *seq = saver.seq;
 }
@@ -936,10 +948,10 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           iter->max_covering_tombstone_seq,
           range_del_iter->MaxCoveringTombstoneSeqnum(iter->lkey->user_key()));
     }
-    GetFromTable(*(iter->lkey), iter->max_covering_tombstone_seq, true,
-                 callback, is_blob, iter->value->GetSelf(), iter->timestamp,
-                 iter->s, &(iter->merge_context), &seq, &found_final_value,
-                 &merge_in_progress);
+    GetFromTable(*(iter->lkey), read_options, iter->max_covering_tombstone_seq,
+                 true, callback, is_blob, iter->value->GetSelf(),
+                 iter->timestamp, iter->s, &(iter->merge_context), &seq,
+                 &found_final_value, &merge_in_progress);
 
     if (!found_final_value && merge_in_progress) {
       *(iter->s) = Status::MergeInProgress();
