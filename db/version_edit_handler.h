@@ -163,6 +163,8 @@ class VersionEditHandler : public VersionEditHandlerBase {
                     bool prefetch_index_and_filter_in_cache,
                     bool is_initial_load);
 
+  virtual bool MustOpenAllColumnFamilies() const { return !read_only_; }
+
   const bool read_only_;
   const std::vector<ColumnFamilyDescriptor>& column_families_;
   VersionSet* version_set_;
@@ -247,6 +249,20 @@ class DumpManifestHandler : public VersionEditHandler {
   const bool hex_;
   const bool json_;
   int count_;
+};
+
+class ReactiveVersionSet::RecoveryHandler
+    : public VersionEditHandlerPointInTime {
+ public:
+  RecoveryHandler(const std::vector<ColumnFamilyDescriptor>& column_families,
+                  VersionSet* version_set,
+                  const std::shared_ptr<IOTracer>& io_tracer)
+      : VersionEditHandlerPointInTime(/*read_only=*/false, column_families,
+                                      version_set, io_tracer) {}
+  ~RecoveryHandler() override {}
+
+ protected:
+  bool MustOpenAllColumnFamilies() const override { return false; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

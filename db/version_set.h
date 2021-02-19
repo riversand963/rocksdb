@@ -895,6 +895,7 @@ class BaseReferencedVersionBuilder;
 
 class AtomicGroupReadBuffer {
  public:
+  AtomicGroupReadBuffer() = default;
   Status AddEdit(VersionEdit* edit);
   void Clear();
   bool IsFull() const;
@@ -1449,6 +1450,8 @@ class ReactiveVersionSet : public VersionSet {
   }
 
  protected:
+  class RecoveryHandler;
+
   using VersionSet::ApplyOneVersionEditToBuilder;
 
   // REQUIRES db mutex
@@ -1461,6 +1464,7 @@ class ReactiveVersionSet : public VersionSet {
       std::unique_ptr<log::FragmentBufferedReader>* manifest_reader);
 
  private:
+  std::unique_ptr<RecoveryHandler> recovery_handler_;
   VersionBuilderMap active_version_builders_;
   AtomicGroupReadBuffer read_buffer_;
   // Number of version edits to skip by ReadAndApply at the beginning of a new

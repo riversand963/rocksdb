@@ -337,7 +337,8 @@ void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
   }
   // There were some column families in the MANIFEST that weren't specified
   // in the argument. This is OK in read_only mode
-  if (s->ok() && !read_only_ && !column_families_not_found_.empty()) {
+  if (s->ok() && MustOpenAllColumnFamilies() &&
+      !column_families_not_found_.empty()) {
     std::string msg;
     for (const auto& cf : column_families_not_found_) {
       msg.append(", ");

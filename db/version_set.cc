@@ -5895,29 +5895,8 @@ Status ReactiveVersionSet::Recover(
   assert(manifest_reporter != nullptr);
   assert(manifest_reader_status != nullptr);
 
-  std::unordered_map<std::string, ColumnFamilyOptions> cf_name_to_options;
-  for (const auto& cf : column_families) {
-    cf_name_to_options.insert({cf.name, cf.options});
-  }
-
-  // add default column family
-  auto default_cf_iter = cf_name_to_options.find(kDefaultColumnFamilyName);
-  if (default_cf_iter == cf_name_to_options.end()) {
-    return Status::InvalidArgument("Default column family not specified");
-  }
-  VersionEdit default_cf_edit;
-  default_cf_edit.AddColumnFamily(kDefaultColumnFamilyName);
-  default_cf_edit.SetColumnFamily(0);
-  ColumnFamilyData* default_cfd =
-      CreateColumnFamily(default_cf_iter->second, &default_cf_edit);
-  // In recovery, nobody else can access it, so it's fine to set it to be
-  // initialized earlier.
-  default_cfd->set_initialized();
-  VersionBuilderMap builders;
-  std::unordered_map<int, std::string> column_families_not_found;
-  builders.insert(
-      std::make_pair(0, std::unique_ptr<BaseReferencedVersionBuilder>(
-                            new BaseReferencedVersionBuilder(default_cfd))));
+  RecoveryHandler handler(column_families,
+                          const_cast<ReactiveVersionSet*>(this), io_tracer_);
 
   manifest_reader_status->reset(new Status());
   manifest_reporter->reset(new LogReporter());
@@ -5925,125 +5904,11 @@ Status ReactiveVersionSet::Recover(
       manifest_reader_status->get();
   Status s = MaybeSwitchManifest(manifest_reporter->get(), manifest_reader);
   log::Reader* reader = manifest_reader->get();
+  assert(reader);
 
-  int retry = 0;
-  VersionEdit version_edit;
-  while (s.ok() && retry < 1) {
-    assert(reader != nullptr);
-    s = ReadAndRecover(*reader, &read_buffer_, cf_name_to_options,
-                       column_families_not_found, builders,
-                       manifest_reader_status->get(), &version_edit);
-    if (s.ok()) {
-      bool enough = version_edit.has_next_file_number_ &&
-                    version_edit.has_log_number_ &&
-                    version_edit.has_last_sequence_;
-      if (enough) {
-        for (const auto& cf : column_families) {
-          auto cfd = column_family_set_->GetColumnFamily(cf.name);
-          if (cfd == nullptr) {
-            enough = false;
-            break;
-          }
-        }
-      }
-      if (enough) {
-        for (const auto& cf : column_families) {
-          auto cfd = column_family_set_->GetColumnFamily(cf.name);
-          assert(cfd != nullptr);
-          if (!cfd->IsDropped()) {
-            auto builder_iter = builders.find(cfd->GetID());
-            assert(builder_iter != builders.end());
-            auto builder = builder_iter->second->version_builder();
-            assert(builder != nullptr);
-            s = builder->LoadTableHandlers(
-                cfd->internal_stats(), db_options_->max_file_opening_threads,
-                false /* prefetch_index_and_filter_in_cache */,
-                true /* is_initial_load */,
-                cfd->GetLatestMutableCFOptions()->prefix_extractor.get(),
-                MaxFileSizeForL0MetaPin(*cfd->GetLatestMutableCFOptions()));
-            if (!s.ok()) {
-              enough = false;
-              if (s.IsPathNotFound()) {
-                s = Status::OK();
-              }
-              break;
-            }
-          }
-        }
-      }
-      if (enough) {
-        break;
-      }
-    }
-    ++retry;
-  }
+  handler.Iterate(*reader, manifest_reader_status->get());
 
-  if (s.ok()) {
-    if (!version_edit.has_prev_log_number_) {
-      version_edit.prev_log_number_ = 0;
-    }
-    column_family_set_->UpdateMaxColumnFamily(version_edit.max_column_family_);
-
-    MarkMinLogNumberToKeep2PC(version_edit.min_log_number_to_keep_);
-    MarkFileNumberUsed(version_edit.prev_log_number_);
-    MarkFileNumberUsed(version_edit.log_number_);
-
-    for (auto cfd : *column_family_set_) {
-      assert(builders.count(cfd->GetID()) > 0);
-      auto builder = builders[cfd->GetID()]->version_builder();
-      if (!builder->CheckConsistencyForNumLevels()) {
-        s = Status::InvalidArgument(
-            "db has more levels than options.num_levels");
-        break;
-      }
-    }
-  }
-
-  if (s.ok()) {
-    for (auto cfd : *column_family_set_) {
-      if (cfd->IsDropped()) {
-        continue;
-      }
-      assert(cfd->initialized());
-      auto builders_iter = builders.find(cfd->GetID());
-      assert(builders_iter != builders.end());
-      auto* builder = builders_iter->second->version_builder();
-
-      Version* v = new Version(cfd, this, file_options_,
-                               *cfd->GetLatestMutableCFOptions(), io_tracer_,
-                               current_version_number_++);
-      s = builder->SaveTo(v->storage_info());
-
-      if (s.ok()) {
-        // Install recovered version
-        v->PrepareApply(*cfd->GetLatestMutableCFOptions(),
-                        !(db_options_->skip_stats_update_on_db_open));
-        AppendVersion(cfd, v);
-      } else {
-        ROCKS_LOG_ERROR(db_options_->info_log,
-                        "[%s]: inconsistent version: %s\n",
-                        cfd->GetName().c_str(), s.ToString().c_str());
-        delete v;
-        break;
-      }
-    }
-  }
-  if (s.ok()) {
-    next_file_number_.store(version_edit.next_file_number_ + 1);
-    last_allocated_sequence_ = version_edit.last_sequence_;
-    last_published_sequence_ = version_edit.last_sequence_;
-    last_sequence_ = version_edit.last_sequence_;
-    prev_log_number_ = version_edit.prev_log_number_;
-    for (auto cfd : *column_family_set_) {
-      if (cfd->IsDropped()) {
-        continue;
-      }
-      ROCKS_LOG_INFO(db_options_->info_log,
-                     "Column family [%s] (ID %u), log number is %" PRIu64 "\n",
-                     cfd->GetName().c_str(), cfd->GetID(), cfd->GetLogNumber());
-    }
-  }
-  return s;
+  return handler.status();
 }
 
 Status ReactiveVersionSet::ReadAndApply(
