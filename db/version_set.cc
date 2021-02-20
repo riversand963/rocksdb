@@ -4486,110 +4486,6 @@ Status VersionSet::LogAndApplyHelper(ColumnFamilyData* cfd,
   return builder ? builder->Apply(edit) : Status::OK();
 }
 
-Status VersionSet::ApplyOneVersionEditToBuilder(
-    VersionEdit& edit,
-    const std::unordered_map<std::string, ColumnFamilyOptions>& name_to_options,
-    std::unordered_map<int, std::string>& column_families_not_found,
-    std::unordered_map<uint32_t, std::unique_ptr<BaseReferencedVersionBuilder>>&
-        builders,
-    VersionEditParams* version_edit_params) {
-  // Not found means that user didn't supply that column
-  // family option AND we encountered column family add
-  // record. Once we encounter column family drop record,
-  // we will delete the column family from
-  // column_families_not_found.
-  bool cf_in_not_found = (column_families_not_found.find(edit.column_family_) !=
-                          column_families_not_found.end());
-  // in builders means that user supplied that column family
-  // option AND that we encountered column family add record
-  bool cf_in_builders = builders.find(edit.column_family_) != builders.end();
-
-  // they can't both be true
-  assert(!(cf_in_not_found && cf_in_builders));
-
-  ColumnFamilyData* cfd = nullptr;
-
-  if (edit.is_column_family_add_) {
-    if (cf_in_builders || cf_in_not_found) {
-      return Status::Corruption(
-          "Manifest adding the same column family twice: " +
-          edit.column_family_name_);
-    }
-    auto cf_options = name_to_options.find(edit.column_family_name_);
-    // implicitly add persistent_stats column family without requiring user
-    // to specify
-    bool is_persistent_stats_column_family =
-        edit.column_family_name_.compare(kPersistentStatsColumnFamilyName) == 0;
-    if (cf_options == name_to_options.end() &&
-        !is_persistent_stats_column_family) {
-      column_families_not_found.insert(
-          {edit.column_family_, edit.column_family_name_});
-    } else {
-      // recover persistent_stats CF from a DB that already contains it
-      if (is_persistent_stats_column_family) {
-        ColumnFamilyOptions cfo;
-        OptimizeForPersistentStats(&cfo);
-        cfd = CreateColumnFamily(cfo, &edit);
-      } else {
-        cfd = CreateColumnFamily(cf_options->second, &edit);
-      }
-      cfd->set_initialized();
-      builders.insert(std::make_pair(
-          edit.column_family_, std::unique_ptr<BaseReferencedVersionBuilder>(
-                                   new BaseReferencedVersionBuilder(cfd))));
-    }
-  } else if (edit.is_column_family_drop_) {
-    if (cf_in_builders) {
-      auto builder = builders.find(edit.column_family_);
-      assert(builder != builders.end());
-      builders.erase(builder);
-      cfd = column_family_set_->GetColumnFamily(edit.column_family_);
-      assert(cfd != nullptr);
-      if (cfd->UnrefAndTryDelete()) {
-        cfd = nullptr;
-      } else {
-        // who else can have reference to cfd!?
-        assert(false);
-      }
-    } else if (cf_in_not_found) {
-      column_families_not_found.erase(edit.column_family_);
-    } else {
-      return Status::Corruption(
-          "Manifest - dropping non-existing column family");
-    }
-  } else if (edit.IsWalAddition()) {
-    Status s = wals_.AddWals(edit.GetWalAdditions());
-    if (!s.ok()) {
-      return s;
-    }
-  } else if (edit.IsWalDeletion()) {
-    Status s = wals_.DeleteWalsBefore(edit.GetWalDeletion().GetLogNumber());
-    if (!s.ok()) {
-      return s;
-    }
-  } else if (!cf_in_not_found) {
-    if (!cf_in_builders) {
-      return Status::Corruption(
-          "Manifest record referencing unknown column family");
-    }
-
-    cfd = column_family_set_->GetColumnFamily(edit.column_family_);
-    // this should never happen since cf_in_builders is true
-    assert(cfd != nullptr);
-
-    // if it is not column family add or column family drop,
-    // then it's a file add/delete, which should be forwarded
-    // to builder
-    auto builder = builders.find(edit.column_family_);
-    assert(builder != builders.end());
-    Status s = builder->second->version_builder()->Apply(&edit);
-    if (!s.ok()) {
-      return s;
-    }
-  }
-  return ExtractInfoFromVersionEdit(cfd, edit, version_edit_params);
-}
-
 Status VersionSet::ExtractInfoFromVersionEdit(
     ColumnFamilyData* cfd, const VersionEdit& from_edit,
     VersionEditParams* version_edit_params) {
@@ -4673,77 +4569,6 @@ Status VersionSet::GetCurrentManifestPath(const std::string& dbname,
   }
   manifest_path->append(fname);
   return Status::OK();
-}
-
-Status VersionSet::ReadAndRecover(
-    log::Reader& reader, AtomicGroupReadBuffer* read_buffer,
-    const std::unordered_map<std::string, ColumnFamilyOptions>& name_to_options,
-    std::unordered_map<int, std::string>& column_families_not_found,
-    std::unordered_map<uint32_t, std::unique_ptr<BaseReferencedVersionBuilder>>&
-        builders,
-    Status* log_read_status, VersionEditParams* version_edit_params,
-    std::string* db_id) {
-  assert(read_buffer != nullptr);
-  assert(log_read_status != nullptr);
-  Status s;
-  Slice record;
-  std::string scratch;
-  size_t recovered_edits = 0;
-  while (s.ok() && reader.ReadRecord(&record, &scratch) &&
-         log_read_status->ok()) {
-    VersionEdit edit;
-    s = edit.DecodeFrom(record);
-    if (!s.ok()) {
-      break;
-    }
-    if (edit.has_db_id_) {
-      db_id_ = edit.GetDbId();
-      if (db_id != nullptr) {
-        db_id->assign(edit.GetDbId());
-      }
-    }
-    s = read_buffer->AddEdit(&edit);
-    if (!s.ok()) {
-      break;
-    }
-    if (edit.is_in_atomic_group_) {
-      if (read_buffer->IsFull()) {
-        // Apply edits in an atomic group when we have read all edits in the
-        // group.
-        for (auto& e : read_buffer->replay_buffer()) {
-          s = ApplyOneVersionEditToBuilder(e, name_to_options,
-                                           column_families_not_found, builders,
-                                           version_edit_params);
-          if (!s.ok()) {
-            break;
-          }
-          recovered_edits++;
-        }
-        if (!s.ok()) {
-          break;
-        }
-        read_buffer->Clear();
-      }
-    } else {
-      // Apply a normal edit immediately.
-      s = ApplyOneVersionEditToBuilder(edit, name_to_options,
-                                       column_families_not_found, builders,
-                                       version_edit_params);
-      if (s.ok()) {
-        recovered_edits++;
-      }
-    }
-  }
-  if (!log_read_status->ok()) {
-    s = *log_read_status;
-  }
-  if (!s.ok()) {
-    // Clear the buffer if we fail to decode/apply an edit.
-    read_buffer->Clear();
-  }
-  TEST_SYNC_POINT_CALLBACK("VersionSet::ReadAndRecover:RecoveredEdits",
-                           &recovered_edits);
-  return s;
 }
 
 Status VersionSet::Recover(
@@ -5895,8 +5720,7 @@ ReactiveVersionSet::ReactiveVersionSet(
     const std::shared_ptr<IOTracer>& io_tracer)
     : VersionSet(dbname, _db_options, _file_options, table_cache,
                  write_buffer_manager, write_controller,
-                 /*block_cache_tracer=*/nullptr, io_tracer),
-      number_of_edits_to_skip_(0) {}
+                 /*block_cache_tracer=*/nullptr, io_tracer) {}
 
 ReactiveVersionSet::~ReactiveVersionSet() {}
 
@@ -5945,17 +5769,6 @@ Status ReactiveVersionSet::ReadAndApply(
       s = edit.DecodeFrom(record);
       if (!s.ok()) {
         break;
-      }
-
-      // Skip the first VersionEdits of each MANIFEST generated by
-      // VersionSet::WriteCurrentStatetoManifest.
-      if (number_of_edits_to_skip_ > 0) {
-        ColumnFamilyData* cfd =
-            column_family_set_->GetColumnFamily(edit.column_family_);
-        if (cfd != nullptr && !cfd->IsDropped()) {
-          --number_of_edits_to_skip_;
-        }
-        continue;
       }
 
       s = read_buffer_.AddEdit(&edit);
@@ -6008,30 +5821,6 @@ Status ReactiveVersionSet::ReadAndApply(
         // loop since no record is available if we have reached here.
         break;
       } else {
-        // We have switched to a new MANIFEST whose first records have been
-        // generated by VersionSet::WriteCurrentStatetoManifest. Since the
-        // secondary instance has already finished recovering upon start, there
-        // is no need for the secondary to process these records. Actually, if
-        // the secondary were to replay these records, the secondary may end up
-        // adding the same SST files AGAIN to each column family, causing
-        // consistency checks done by VersionBuilder to fail. Therefore, we
-        // record the number of records to skip at the beginning of the new
-        // MANIFEST and ignore them.
-        number_of_edits_to_skip_ = 0;
-        for (auto* cfd : *column_family_set_) {
-          if (cfd->IsDropped()) {
-            continue;
-          }
-          // Increase number_of_edits_to_skip by 2 because
-          // WriteCurrentStatetoManifest() writes 2 version edits for each
-          // column family at the beginning of the newly-generated MANIFEST.
-          // TODO(yanqin) remove hard-coded value.
-          if (db_options_->write_dbid_to_manifest) {
-            number_of_edits_to_skip_ += 3;
-          } else {
-            number_of_edits_to_skip_ += 2;
-          }
-        }
         s = tmp_s;
       }
     }

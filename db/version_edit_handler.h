@@ -213,6 +213,14 @@ class VersionEditHandlerPointInTime : public VersionEditHandler {
   std::unordered_map<uint32_t, Version*> versions_;
 };
 
+class ManifestTailer : public VersionEditHandlerBase {
+ public:
+  explicit ManifestTailer() : VersionEditHandlerBase() {}
+
+ protected:
+  Status ApplyVersionEdit(VersionEdit& edit, ColumnFamilyData** cfd) override;
+};
+
 class DumpManifestHandler : public VersionEditHandler {
  public:
   DumpManifestHandler(

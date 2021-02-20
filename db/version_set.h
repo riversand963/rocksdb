@@ -72,6 +72,7 @@ class MergeContext;
 class ColumnFamilySet;
 class MergeIteratorBuilder;
 class SystemClock;
+class ManifestTailer;
 
 // VersionEdit is always supposed to be valid and it is used to point at
 // entries in Manifest. Ideally it should not be used as a container to
@@ -1317,25 +1318,6 @@ class VersionSet {
   ColumnFamilyData* CreateColumnFamily(const ColumnFamilyOptions& cf_options,
                                        const VersionEdit* edit);
 
-  Status ReadAndRecover(
-      log::Reader& reader, AtomicGroupReadBuffer* read_buffer,
-      const std::unordered_map<std::string, ColumnFamilyOptions>&
-          name_to_options,
-      std::unordered_map<int, std::string>& column_families_not_found,
-      std::unordered_map<
-          uint32_t, std::unique_ptr<BaseReferencedVersionBuilder>>& builders,
-      Status* log_read_status, VersionEditParams* version_edit,
-      std::string* db_id = nullptr);
-
-  // REQUIRES db mutex
-  Status ApplyOneVersionEditToBuilder(
-      VersionEdit& edit,
-      const std::unordered_map<std::string, ColumnFamilyOptions>& name_to_opts,
-      std::unordered_map<int, std::string>& column_families_not_found,
-      std::unordered_map<
-          uint32_t, std::unique_ptr<BaseReferencedVersionBuilder>>& builders,
-      VersionEditParams* version_edit);
-
   Status ExtractInfoFromVersionEdit(ColumnFamilyData* cfd,
                                     const VersionEdit& from_edit,
                                     VersionEditParams* version_edit_params);
@@ -1452,8 +1434,6 @@ class ReactiveVersionSet : public VersionSet {
  protected:
   class RecoveryHandler;
 
-  using VersionSet::ApplyOneVersionEditToBuilder;
-
   // REQUIRES db mutex
   Status ApplyOneVersionEditToBuilder(
       VersionEdit& edit, std::unordered_set<ColumnFamilyData*>* cfds_changed,
@@ -1465,11 +1445,9 @@ class ReactiveVersionSet : public VersionSet {
 
  private:
   std::unique_ptr<RecoveryHandler> recovery_handler_;
+  std::unique_ptr<ManifestTailer> manifest_tailer_;
   VersionBuilderMap active_version_builders_;
   AtomicGroupReadBuffer read_buffer_;
-  // Number of version edits to skip by ReadAndApply at the beginning of a new
-  // MANIFEST created by primary.
-  int number_of_edits_to_skip_;
 
   using VersionSet::LogAndApply;
   using VersionSet::Recover;
