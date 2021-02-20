@@ -251,18 +251,4 @@ class DumpManifestHandler : public VersionEditHandler {
   int count_;
 };
 
-class ReactiveVersionSet::RecoveryHandler
-    : public VersionEditHandlerPointInTime {
- public:
-  RecoveryHandler(const std::vector<ColumnFamilyDescriptor>& column_families,
-                  VersionSet* version_set,
-                  const std::shared_ptr<IOTracer>& io_tracer)
-      : VersionEditHandlerPointInTime(/*read_only=*/false, column_families,
-                                      version_set, io_tracer) {}
-  ~RecoveryHandler() override {}
-
- protected:
-  bool MustOpenAllColumnFamilies() const override { return false; }
-};
-
 }  // namespace ROCKSDB_NAMESPACE

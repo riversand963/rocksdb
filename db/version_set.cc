@@ -5874,6 +5874,20 @@ Status VersionSet::VerifyFileMetadata(const std::string& fpath,
   return status;
 }
 
+class ReactiveVersionSet::RecoveryHandler
+    : public VersionEditHandlerPointInTime {
+ public:
+  RecoveryHandler(const std::vector<ColumnFamilyDescriptor>& column_families,
+                  VersionSet* version_set,
+                  const std::shared_ptr<IOTracer>& io_tracer)
+      : VersionEditHandlerPointInTime(/*read_only=*/false, column_families,
+                                      version_set, io_tracer) {}
+  ~RecoveryHandler() override {}
+
+ protected:
+  bool MustOpenAllColumnFamilies() const override { return false; }
+};
+
 ReactiveVersionSet::ReactiveVersionSet(
     const std::string& dbname, const ImmutableDBOptions* _db_options,
     const FileOptions& _file_options, Cache* table_cache,
@@ -5895,9 +5909,6 @@ Status ReactiveVersionSet::Recover(
   assert(manifest_reporter != nullptr);
   assert(manifest_reader_status != nullptr);
 
-  RecoveryHandler handler(column_families,
-                          const_cast<ReactiveVersionSet*>(this), io_tracer_);
-
   manifest_reader_status->reset(new Status());
   manifest_reporter->reset(new LogReporter());
   static_cast_with_check<LogReporter>(manifest_reporter->get())->status =
@@ -5906,9 +5917,12 @@ Status ReactiveVersionSet::Recover(
   log::Reader* reader = manifest_reader->get();
   assert(reader);
 
-  handler.Iterate(*reader, manifest_reader_status->get());
+  recovery_handler_.reset(new RecoveryHandler(
+      column_families, const_cast<ReactiveVersionSet*>(this), io_tracer_));
 
-  return handler.status();
+  recovery_handler_->Iterate(*reader, manifest_reader_status->get());
+
+  return recovery_handler_->status();
 }
 
 Status ReactiveVersionSet::ReadAndApply(
