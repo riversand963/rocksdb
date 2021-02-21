@@ -115,13 +115,13 @@ Status FileChecksumRetriever::ApplyVersionEdit(VersionEdit& edit,
 }
 
 VersionEditHandler::VersionEditHandler(
-    bool read_only, const std::vector<ColumnFamilyDescriptor>& column_families,
+    bool read_only, std::vector<ColumnFamilyDescriptor> column_families,
     VersionSet* version_set, bool track_missing_files,
     bool no_error_if_table_files_missing,
     const std::shared_ptr<IOTracer>& io_tracer, bool skip_load_table_files)
     : VersionEditHandlerBase(),
       read_only_(read_only),
-      column_families_(column_families),
+      column_families_(std::move(column_families)),
       version_set_(version_set),
       track_missing_files_(track_missing_files),
       no_error_if_table_files_missing_(no_error_if_table_files_missing),
@@ -559,7 +559,7 @@ Status VersionEditHandler::ExtractInfoFromVersionEdit(ColumnFamilyData* cfd,
 }
 
 VersionEditHandlerPointInTime::VersionEditHandlerPointInTime(
-    bool read_only, const std::vector<ColumnFamilyDescriptor>& column_families,
+    bool read_only, std::vector<ColumnFamilyDescriptor> column_families,
     VersionSet* version_set, const std::shared_ptr<IOTracer>& io_tracer)
     : VersionEditHandler(read_only, column_families, version_set,
                          /*track_missing_files=*/true,
@@ -628,7 +628,7 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
     uint64_t file_num = fd.GetNumber();
     const std::string fpath =
         MakeTableFileName(cfd->ioptions()->cf_paths[0].path, file_num);
-    s = version_set_->VerifyFileMetadata(fpath, meta);
+    s = VerifyFile(fpath, meta);
     if (s.IsPathNotFound() || s.IsNotFound() || s.IsCorruption()) {
       missing_files.insert(file_num);
       s = Status::OK();
@@ -665,6 +665,96 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
     } else {
       delete version;
     }
+  }
+  return s;
+}
+
+Status VersionEditHandlerPointInTime::VerifyFile(const std::string& fpath,
+                                                 const FileMetaData& fmeta) {
+  return version_set_->VerifyFileMetadata(fpath, fmeta);
+}
+
+Status ManifestTailer::Initialize() {
+  if (Mode::kRecovery == mode_) {
+    return VersionEditHandler::Initialize();
+  }
+  assert(Mode::kCatchUp == mode_);
+  Status s;
+  if (!initialized_) {
+    ColumnFamilySet* cfd_set = version_set_->GetColumnFamilySet();
+    assert(cfd_set);
+    ColumnFamilyData* default_cfd = cfd_set->GetDefault();
+    assert(default_cfd);
+    auto builder_iter = builders_.find(default_cfd->GetID());
+    assert(builder_iter != builders_.end());
+
+    Version* dummy_version = default_cfd->dummy_versions();
+    assert(dummy_version);
+    Version* base_version = dummy_version->TEST_Next();
+    VersionBuilderUPtr new_builder(
+        new BaseReferencedVersionBuilder(default_cfd, base_version));
+    builder_iter->second = std::move(new_builder);
+
+#ifndef NDEBUG
+    auto version_iter = versions_.find(default_cfd->GetID());
+    assert(version_iter != versions_.end());
+#endif  // !NDEBUG
+    initialized_ = true;
+  }
+  return s;
+}
+
+Status ManifestTailer::OnColumnFamilyAdd(VersionEdit& edit,
+                                         ColumnFamilyData** cfd) {
+  if (Mode::kRecovery == mode_) {
+    return VersionEditHandler::OnColumnFamilyAdd(edit, cfd);
+  }
+  assert(Mode::kCatchUp == mode_);
+  ColumnFamilySet* cfd_set = version_set_->GetColumnFamilySet();
+  assert(cfd_set);
+  ColumnFamilyData* tmp_cfd = cfd_set->GetColumnFamily(edit.GetColumnFamily());
+  assert(cfd);
+  *cfd = tmp_cfd;
+  if (!tmp_cfd) {
+    // For now, ignore new column families created after Recover() succeeds.
+    return Status::OK();
+  }
+  auto builder_iter = builders_.find(edit.GetColumnFamily());
+  assert(builder_iter != builders_.end());
+
+  Version* dummy_version = tmp_cfd->dummy_versions();
+  assert(dummy_version);
+  Version* base_version = dummy_version->TEST_Next();
+  VersionBuilderUPtr new_builder(
+      new BaseReferencedVersionBuilder(tmp_cfd, base_version));
+  builder_iter->second = std::move(new_builder);
+
+#ifndef NDEBUG
+  auto version_iter = versions_.find(edit.GetColumnFamily());
+  assert(version_iter != versions_.end());
+#endif  // !NDEBUG
+  return Status::OK();
+}
+
+void ManifestTailer::CheckIterationResult(const log::Reader& reader,
+                                          Status* s) {
+  VersionEditHandlerPointInTime::CheckIterationResult(reader, s);
+  assert(s);
+  if (s->ok()) {
+    if (Mode::kRecovery == mode_) {
+      mode_ = Mode::kCatchUp;
+    } else {
+      assert(Mode::kCatchUp == mode_);
+    }
+  }
+}
+
+Status ManifestTailer::VerifyFile(const std::string& fpath,
+                                  const FileMetaData& fmeta) {
+  Status s = VersionEditHandlerPointInTime::VerifyFile(fpath, fmeta);
+  if (s.ok()) {
+    // TODO: Open file or create hard link to prevent the file from being
+    // deleted.
   }
   return s;
 }

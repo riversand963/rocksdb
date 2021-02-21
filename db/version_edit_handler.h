@@ -15,6 +15,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+struct FileMetaData;
+
 class VersionEditHandlerBase {
  public:
   explicit VersionEditHandlerBase()
@@ -126,14 +128,14 @@ class VersionEditHandler : public VersionEditHandlerBase {
  protected:
   explicit VersionEditHandler(
       bool read_only,
-      const std::vector<ColumnFamilyDescriptor>& column_families,
+      std::vector<ColumnFamilyDescriptor> column_families,
       VersionSet* version_set, bool track_missing_files,
       bool no_error_if_table_files_missing,
       const std::shared_ptr<IOTracer>& io_tracer, bool skip_load_table_files);
 
   Status ApplyVersionEdit(VersionEdit& edit, ColumnFamilyData** cfd) override;
 
-  Status OnColumnFamilyAdd(VersionEdit& edit, ColumnFamilyData** cfd);
+  virtual Status OnColumnFamilyAdd(VersionEdit& edit, ColumnFamilyData** cfd);
 
   Status OnColumnFamilyDrop(VersionEdit& edit, ColumnFamilyData** cfd);
 
@@ -166,7 +168,7 @@ class VersionEditHandler : public VersionEditHandlerBase {
   virtual bool MustOpenAllColumnFamilies() const { return !read_only_; }
 
   const bool read_only_;
-  const std::vector<ColumnFamilyDescriptor>& column_families_;
+  std::vector<ColumnFamilyDescriptor> column_families_;
   VersionSet* version_set_;
   std::unordered_map<uint32_t, VersionBuilderUPtr> builders_;
   std::unordered_map<std::string, ColumnFamilyOptions> name_to_options_;
@@ -181,12 +183,11 @@ class VersionEditHandler : public VersionEditHandlerBase {
   bool no_error_if_table_files_missing_;
   std::shared_ptr<IOTracer> io_tracer_;
   bool skip_load_table_files_;
+  bool initialized_;
 
  private:
   Status ExtractInfoFromVersionEdit(ColumnFamilyData* cfd,
                                     const VersionEdit& edit);
-
-  bool initialized_;
 };
 
 // A class similar to its base class, i.e. VersionEditHandler.
@@ -199,7 +200,7 @@ class VersionEditHandlerPointInTime : public VersionEditHandler {
  public:
   VersionEditHandlerPointInTime(
       bool read_only,
-      const std::vector<ColumnFamilyDescriptor>& column_families,
+      std::vector<ColumnFamilyDescriptor> column_families,
       VersionSet* version_set, const std::shared_ptr<IOTracer>& io_tracer);
   ~VersionEditHandlerPointInTime() override;
 
@@ -208,23 +209,47 @@ class VersionEditHandlerPointInTime : public VersionEditHandler {
   ColumnFamilyData* DestroyCfAndCleanup(const VersionEdit& edit) override;
   Status MaybeCreateVersion(const VersionEdit& edit, ColumnFamilyData* cfd,
                             bool force_create_version) override;
+  virtual Status VerifyFile(const std::string& fpath,
+                            const FileMetaData& fmeta);
 
- private:
   std::unordered_map<uint32_t, Version*> versions_;
 };
 
-class ManifestTailer : public VersionEditHandlerBase {
+class ManifestTailer : public VersionEditHandlerPointInTime {
  public:
-  explicit ManifestTailer() : VersionEditHandlerBase() {}
+  explicit ManifestTailer(
+      std::vector<ColumnFamilyDescriptor> column_families,
+      VersionSet* version_set, const std::shared_ptr<IOTracer>& io_tracer)
+      : VersionEditHandlerPointInTime(/*read_only=*/false, column_families,
+                                      version_set, io_tracer),
+        mode_(Mode::kRecovery) {}
+
+  void PrepareToReadNewManifest() { initialized_ = false; }
 
  protected:
-  Status ApplyVersionEdit(VersionEdit& edit, ColumnFamilyData** cfd) override;
+  Status Initialize() override;
+
+  bool MustOpenAllColumnFamilies() const override { return false; }
+
+  Status OnColumnFamilyAdd(VersionEdit& edit, ColumnFamilyData** cfd) override;
+
+  void CheckIterationResult(const log::Reader& reader, Status* s) override;
+
+  Status VerifyFile(const std::string& fpath,
+                    const FileMetaData& fmeta) override;
+
+  enum Mode : uint8_t {
+    kRecovery = 0,
+    kCatchUp = 1,
+  };
+
+  Mode mode_;
 };
 
 class DumpManifestHandler : public VersionEditHandler {
  public:
   DumpManifestHandler(
-      const std::vector<ColumnFamilyDescriptor>& column_families,
+      std::vector<ColumnFamilyDescriptor> column_families,
       VersionSet* version_set, const std::shared_ptr<IOTracer>& io_tracer,
       bool verbose, bool hex, bool json)
       : VersionEditHandler(

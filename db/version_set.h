@@ -1432,8 +1432,6 @@ class ReactiveVersionSet : public VersionSet {
   }
 
  protected:
-  class RecoveryHandler;
-
   // REQUIRES db mutex
   Status ApplyOneVersionEditToBuilder(
       VersionEdit& edit, std::unordered_set<ColumnFamilyData*>* cfds_changed,
@@ -1444,7 +1442,6 @@ class ReactiveVersionSet : public VersionSet {
       std::unique_ptr<log::FragmentBufferedReader>* manifest_reader);
 
  private:
-  std::unique_ptr<RecoveryHandler> recovery_handler_;
   std::unique_ptr<ManifestTailer> manifest_tailer_;
   VersionBuilderMap active_version_builders_;
   AtomicGroupReadBuffer read_buffer_;

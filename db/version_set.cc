@@ -5699,20 +5699,6 @@ Status VersionSet::VerifyFileMetadata(const std::string& fpath,
   return status;
 }
 
-class ReactiveVersionSet::RecoveryHandler
-    : public VersionEditHandlerPointInTime {
- public:
-  RecoveryHandler(const std::vector<ColumnFamilyDescriptor>& column_families,
-                  VersionSet* version_set,
-                  const std::shared_ptr<IOTracer>& io_tracer)
-      : VersionEditHandlerPointInTime(/*read_only=*/false, column_families,
-                                      version_set, io_tracer) {}
-  ~RecoveryHandler() override {}
-
- protected:
-  bool MustOpenAllColumnFamilies() const override { return false; }
-};
-
 ReactiveVersionSet::ReactiveVersionSet(
     const std::string& dbname, const ImmutableDBOptions* _db_options,
     const FileOptions& _file_options, Cache* table_cache,
@@ -5741,12 +5727,12 @@ Status ReactiveVersionSet::Recover(
   log::Reader* reader = manifest_reader->get();
   assert(reader);
 
-  recovery_handler_.reset(new RecoveryHandler(
+  manifest_tailer_.reset(new ManifestTailer(
       column_families, const_cast<ReactiveVersionSet*>(this), io_tracer_));
 
-  recovery_handler_->Iterate(*reader, manifest_reader_status->get());
+  manifest_tailer_->Iterate(*reader, manifest_reader_status->get());
 
-  return recovery_handler_->status();
+  return manifest_tailer_->status();
 }
 
 Status ReactiveVersionSet::ReadAndApply(
