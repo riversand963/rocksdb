@@ -704,6 +704,18 @@ Status ManifestTailer::Initialize() {
   return s;
 }
 
+Status ManifestTailer::ApplyVersionEdit(VersionEdit& edit,
+                                        ColumnFamilyData** cfd) {
+  Status s = VersionEditHandler::ApplyVersionEdit(edit, cfd);
+  if (s.ok()) {
+    assert(cfd);
+    if (*cfd) {
+      cfds_changed_.insert(*cfd);
+    }
+  }
+  return s;
+}
+
 Status ManifestTailer::OnColumnFamilyAdd(VersionEdit& edit,
                                          ColumnFamilyData** cfd) {
   if (Mode::kRecovery == mode_) {

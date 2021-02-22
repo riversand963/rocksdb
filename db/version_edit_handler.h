@@ -226,10 +226,16 @@ class ManifestTailer : public VersionEditHandlerPointInTime {
 
   void PrepareToReadNewManifest() { initialized_ = false; }
 
+  std::unordered_set<ColumnFamilyData*>& GetUpdatedColumnFamilies() {
+    return cfds_changed_;
+  }
+
  protected:
   Status Initialize() override;
 
   bool MustOpenAllColumnFamilies() const override { return false; }
+
+  Status ApplyVersionEdit(VersionEdit& edit, ColumnFamilyData** cfd) override;
 
   Status OnColumnFamilyAdd(VersionEdit& edit, ColumnFamilyData** cfd) override;
 
@@ -244,6 +250,7 @@ class ManifestTailer : public VersionEditHandlerPointInTime {
   };
 
   Mode mode_;
+  std::unordered_set<ColumnFamilyData*> cfds_changed_;
 };
 
 class DumpManifestHandler : public VersionEditHandler {
