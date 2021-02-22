@@ -1417,6 +1417,8 @@ class ReactiveVersionSet : public VersionSet {
   Status ReadAndApply(
       InstrumentedMutex* mu,
       std::unique_ptr<log::FragmentBufferedReader>* manifest_reader,
+      std::unique_ptr<log::Reader::Reporter>* manifest_reporter,
+      std::unique_ptr<Status>* manifest_reader_status,
       std::unordered_set<ColumnFamilyData*>* cfds_changed);
 
   Status Recover(const std::vector<ColumnFamilyDescriptor>& column_families,
