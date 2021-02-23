@@ -62,8 +62,6 @@ void VersionEditHandlerBase::Iterate(log::Reader& reader,
     s = *log_read_status;
   }
 
-  read_buffer_.Clear();
-
   CheckIterationResult(reader, &s);
 
   if (!s.ok()) {

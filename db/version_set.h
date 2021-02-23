@@ -1425,12 +1425,9 @@ class ReactiveVersionSet : public VersionSet {
                  std::unique_ptr<log::Reader::Reporter>* manifest_reporter,
                  std::unique_ptr<Status>* manifest_reader_status);
 
-  uint64_t TEST_read_edits_in_atomic_group() const {
-    return read_buffer_.TEST_read_edits_in_atomic_group();
-  }
-  std::vector<VersionEdit>& replay_buffer() {
-    return read_buffer_.replay_buffer();
-  }
+  uint64_t TEST_read_edits_in_atomic_group() const;
+
+  std::vector<VersionEdit>& replay_buffer();
 
  protected:
   // REQUIRES db mutex
@@ -1444,8 +1441,6 @@ class ReactiveVersionSet : public VersionSet {
 
  private:
   std::unique_ptr<ManifestTailer> manifest_tailer_;
-  VersionBuilderMap active_version_builders_;
-  AtomicGroupReadBuffer read_buffer_;
 
   using VersionSet::LogAndApply;
   using VersionSet::Recover;

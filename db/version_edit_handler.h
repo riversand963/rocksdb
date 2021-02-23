@@ -28,6 +28,8 @@ class VersionEditHandlerBase {
 
   const Status& status() const { return status_; }
 
+  AtomicGroupReadBuffer& GetReadBuffer() { return read_buffer_; }
+
  protected:
   explicit VersionEditHandlerBase(uint64_t max_read_size)
       : max_manifest_read_size_(max_read_size) {}
@@ -38,6 +40,8 @@ class VersionEditHandlerBase {
 
   virtual void CheckIterationResult(const log::Reader& /*reader*/,
                                     Status* /*s*/) {}
+
+  void ClearReadBuffer() { read_buffer_.Clear(); }
 
   Status status_;
 
@@ -224,7 +228,10 @@ class ManifestTailer : public VersionEditHandlerPointInTime {
                                       version_set, io_tracer),
         mode_(Mode::kRecovery) {}
 
-  void PrepareToReadNewManifest() { initialized_ = false; }
+  void PrepareToReadNewManifest() {
+    initialized_ = false;
+    ClearReadBuffer();
+  }
 
   std::unordered_set<ColumnFamilyData*>& GetUpdatedColumnFamilies() {
     return cfds_changed_;

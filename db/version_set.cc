@@ -5759,9 +5759,6 @@ Status ReactiveVersionSet::ReadAndApply(
     *cfds_changed = std::move(manifest_tailer_->GetUpdatedColumnFamilies());
   }
 
-  uint64_t applied_edits = 0;
-  TEST_SYNC_POINT_CALLBACK("ReactiveVersionSet::ReadAndApply:AppliedEdits",
-                           &applied_edits);
   return s;
 }
 
@@ -5802,18 +5799,22 @@ Status ReactiveVersionSet::MaybeSwitchManifest(
           true /* checksum */, 0 /* log_number */));
       ROCKS_LOG_INFO(db_options_->info_log, "Switched to new manifest: %s\n",
                      manifest_path.c_str());
-      // TODO (yanqin) every time we switch to a new MANIFEST, we clear the
-      // active_version_builders_ map because we choose to construct the
-      // versions from scratch, thanks to the first part of each MANIFEST
-      // written by VersionSet::WriteCurrentStatetoManifest. This is not
-      // necessary, but we choose this at present for the sake of simplicity.
-      active_version_builders_.clear();
       if (manifest_tailer_) {
         manifest_tailer_->PrepareToReadNewManifest();
       }
     }
   } while (s.IsPathNotFound());
   return s;
+}
+
+uint64_t ReactiveVersionSet::TEST_read_edits_in_atomic_group() const {
+  assert(manifest_tailer_);
+  return manifest_tailer_->GetReadBuffer().TEST_read_edits_in_atomic_group();
+}
+
+std::vector<VersionEdit>& ReactiveVersionSet::replay_buffer() {
+  assert(manifest_tailer_);
+  return manifest_tailer_->GetReadBuffer().replay_buffer();
 }
 
 }  // namespace ROCKSDB_NAMESPACE
