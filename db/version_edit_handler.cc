@@ -692,6 +692,8 @@ Status ManifestTailer::Initialize() {
     Version* dummy_version = default_cfd->dummy_versions();
     assert(dummy_version);
     Version* base_version = dummy_version->TEST_Next();
+    assert(base_version);
+    base_version->Ref();
     VersionBuilderUPtr new_builder(
         new BaseReferencedVersionBuilder(default_cfd, base_version));
     builder_iter->second = std::move(new_builder);
@@ -734,6 +736,8 @@ Status ManifestTailer::OnColumnFamilyAdd(VersionEdit& edit,
   Version* dummy_version = tmp_cfd->dummy_versions();
   assert(dummy_version);
   Version* base_version = dummy_version->TEST_Next();
+  assert(base_version);
+  base_version->Ref();
   VersionBuilderUPtr new_builder(
       new BaseReferencedVersionBuilder(tmp_cfd, base_version));
   builder_iter->second = std::move(new_builder);
