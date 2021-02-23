@@ -695,10 +695,6 @@ Status ManifestTailer::Initialize() {
         new BaseReferencedVersionBuilder(default_cfd, base_version));
     builder_iter->second = std::move(new_builder);
 
-#ifndef NDEBUG
-    auto version_iter = versions_.find(default_cfd->GetID());
-    assert(version_iter != versions_.end());
-#endif  // !NDEBUG
     initialized_ = true;
   }
   return s;

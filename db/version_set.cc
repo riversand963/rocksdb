@@ -5808,6 +5808,9 @@ Status ReactiveVersionSet::MaybeSwitchManifest(
       // written by VersionSet::WriteCurrentStatetoManifest. This is not
       // necessary, but we choose this at present for the sake of simplicity.
       active_version_builders_.clear();
+      if (manifest_tailer_) {
+        manifest_tailer_->PrepareToReadNewManifest();
+      }
     }
   } while (s.IsPathNotFound());
   return s;
