@@ -355,6 +355,9 @@ void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
     version_set_->MarkFileNumberUsed(version_edit_params_.prev_log_number_);
     version_set_->MarkFileNumberUsed(version_edit_params_.log_number_);
     for (auto* cfd : *(version_set_->GetColumnFamilySet())) {
+      if (cfd->IsDropped()) {
+        continue;
+      }
       auto builder_iter = builders_.find(cfd->GetID());
       assert(builder_iter != builders_.end());
       auto* builder = builder_iter->second->version_builder();
@@ -439,11 +442,9 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
   ColumnFamilyData* ret =
       version_set_->GetColumnFamilySet()->GetColumnFamily(edit.column_family_);
   assert(ret != nullptr);
-  if (ret->UnrefAndTryDelete()) {
-    ret = nullptr;
-  } else {
-    assert(false);
-  }
+  ret->SetDropped();
+  ret->UnrefAndTryDelete();
+  ret = nullptr;
   return ret;
 }
 
