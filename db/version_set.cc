@@ -4201,7 +4201,6 @@ Status VersionSet::ProcessManifestWrites(
       if (!io_s.ok()) {
         s = io_s;
       }
-      TEST_SYNC_POINT("VersionSet::ProcessManifestWrites:AfterNewManifest");
     }
 
     if (s.ok()) {
