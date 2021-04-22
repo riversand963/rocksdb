@@ -41,7 +41,7 @@ TransactionBaseImpl::TransactionBaseImpl(
 
 TransactionBaseImpl::~TransactionBaseImpl() {
   // Release snapshot if snapshot is set
-  SetSnapshotInternal(nullptr);
+  ClearSnapshot();
 }
 
 void TransactionBaseImpl::Clear() {

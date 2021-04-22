@@ -921,8 +921,9 @@ Status WriteBatchInternal::InsertNoop(WriteBatch* b) {
 Status WriteBatchInternal::MarkEndPrepare(WriteBatch* b, const Slice& xid,
                                           bool write_after_commit,
                                           bool unprepared_batch) {
+  constexpr size_t kFirstRecOffset = WriteBatchInternal::kHeader;
   // a manually constructed batch can only contain one prepare section
-  assert(b->rep_[12] == static_cast<char>(kTypeNoop));
+  assert(b->rep_[kFirstRecOffset] == static_cast<char>(kTypeNoop));
 
   // all savepoints up to this point are cleared
   if (b->save_points_ != nullptr) {
@@ -932,7 +933,7 @@ Status WriteBatchInternal::MarkEndPrepare(WriteBatch* b, const Slice& xid,
   }
 
   // rewrite noop as begin marker
-  b->rep_[12] = static_cast<char>(
+  b->rep_[kFirstRecOffset] = static_cast<char>(
       write_after_commit ? kTypeBeginPrepareXID
                          : (unprepared_batch ? kTypeBeginUnprepareXID
                                              : kTypeBeginPersistedPrepareXID));

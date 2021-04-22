@@ -22,8 +22,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-struct WriteOptions;
-
 WritePreparedTxn::WritePreparedTxn(WritePreparedTxnDB* txn_db,
                                    const WriteOptions& write_options,
                                    const TransactionOptions& txn_options)
@@ -107,10 +105,10 @@ Iterator* WritePreparedTxn::GetIterator(const ReadOptions& options,
 Status WritePreparedTxn::PrepareInternal() {
   WriteOptions write_options = write_options_;
   write_options.disableWAL = false;
-  const bool WRITE_AFTER_COMMIT = true;
-  const bool kFirstPrepareBatch = true;
+  constexpr bool kWriteAfterCommit = true;
+  constexpr bool kFirstPrepareBatch = true;
   auto s = WriteBatchInternal::MarkEndPrepare(GetWriteBatch()->GetWriteBatch(),
-                                              name_, !WRITE_AFTER_COMMIT);
+                                              name_, !kWriteAfterCommit);
   assert(s.ok());
   // For each duplicate key we account for a new sub-batch
   prepare_batch_cnt_ = GetWriteBatch()->SubBatchCnt();
@@ -120,11 +118,11 @@ Status WritePreparedTxn::PrepareInternal() {
   AddPreparedCallback add_prepared_callback(
       wpt_db_, db_impl_, prepare_batch_cnt_,
       db_impl_->immutable_db_options().two_write_queues, kFirstPrepareBatch);
-  const bool DISABLE_MEMTABLE = true;
+  constexpr bool disable_memtable = true;
   uint64_t seq_used = kMaxSequenceNumber;
   s = db_impl_->WriteImpl(write_options, GetWriteBatch()->GetWriteBatch(),
                           /*callback*/ nullptr, &log_number_, /*log ref*/ 0,
-                          !DISABLE_MEMTABLE, &seq_used, prepare_batch_cnt_,
+                          !disable_memtable, &seq_used, prepare_batch_cnt_,
                           &add_prepared_callback);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
   auto prepare_seq = seq_used;
@@ -179,7 +177,7 @@ Status WritePreparedTxn::CommitInternal() {
   WritePreparedCommitEntryPreReleaseCallback update_commit_map(
       wpt_db_, db_impl_, prepare_seq, prepare_batch_cnt_, commit_batch_cnt);
   // This is to call AddPrepared on CommitTimeWriteBatch
-  const bool kFirstPrepareBatch = true;
+  constexpr bool kFirstPrepareBatch = true;
   AddPreparedCallback add_prepared_callback(
       wpt_db_, db_impl_, commit_batch_cnt,
       db_impl_->immutable_db_options().two_write_queues, !kFirstPrepareBatch);
@@ -193,7 +191,7 @@ Status WritePreparedTxn::CommitInternal() {
   // Since the prepared batch is directly written to memtable, there is already
   // a connection between the memtable and its WAL, so there is no need to
   // redundantly reference the log that contains the prepared data.
-  const uint64_t zero_log_number = 0ull;
+  constexpr uint64_t zero_log_number = 0ull;
   size_t batch_cnt = UNLIKELY(commit_batch_cnt) ? commit_batch_cnt : 1;
   s = db_impl_->WriteImpl(write_options_, working_batch, nullptr, nullptr,
                           zero_log_number, disable_memtable, &seq_used,
@@ -218,7 +216,7 @@ Status WritePreparedTxn::CommitInternal() {
   // many of commits accompanied with ComitTimeWriteBatch and yet we cannot
   // enable use_only_the_last_commit_time_batch_for_recovery_ optimization,
   // two_write_queues should be disabled to avoid many additional writes here.
-  const size_t kZeroData = 0;
+  constexpr size_t kZeroData = 0;
   // Update commit map only from the 2nd queue
   WritePreparedCommitEntryPreReleaseCallback update_commit_map_with_aux_batch(
       wpt_db_, db_impl_, prepare_seq, prepare_batch_cnt_, kZeroData,
@@ -229,9 +227,9 @@ Status WritePreparedTxn::CommitInternal() {
   // In the absence of Prepare markers, use Noop as a batch separator
   s = WriteBatchInternal::InsertNoop(&empty_batch);
   assert(s.ok());
-  const bool DISABLE_MEMTABLE = true;
-  const size_t ONE_BATCH = 1;
-  const uint64_t NO_REF_LOG = 0;
+  constexpr bool DISABLE_MEMTABLE = true;
+  constexpr size_t ONE_BATCH = 1;
+  constexpr uint64_t NO_REF_LOG = 0;
   s = db_impl_->WriteImpl(write_options_, &empty_batch, nullptr, nullptr,
                           NO_REF_LOG, DISABLE_MEMTABLE, &seq_used, ONE_BATCH,
                           &update_commit_map_with_aux_batch);
@@ -467,7 +465,7 @@ Status WritePreparedTxn::ValidateSnapshot(ColumnFamilyHandle* column_family,
 }
 
 void WritePreparedTxn::SetSnapshot() {
-  const bool kForWWConflictCheck = true;
+  constexpr bool kForWWConflictCheck = true;
   SnapshotImpl* snapshot = wpt_db_->GetSnapshotInternal(kForWWConflictCheck);
   SetSnapshotInternal(snapshot);
 }

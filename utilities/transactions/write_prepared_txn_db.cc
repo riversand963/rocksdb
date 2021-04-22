@@ -172,11 +172,11 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
   // In the absence of Prepare markers, use Noop as a batch separator
   auto s = WriteBatchInternal::InsertNoop(batch);
   assert(s.ok());
-  const bool DISABLE_MEMTABLE = true;
-  const uint64_t no_log_ref = 0;
+  constexpr bool DISABLE_MEMTABLE = true;
+  constexpr uint64_t no_log_ref = 0;
   uint64_t seq_used = kMaxSequenceNumber;
-  const size_t ZERO_PREPARES = 0;
-  const bool kSeperatePrepareCommitBatches = true;
+  constexpr size_t ZERO_PREPARES = 0;
+  constexpr bool kSeperatePrepareCommitBatches = true;
   // Since this is not 2pc, there is no need for AddPrepared but having it in
   // the PreReleaseCallback enables an optimization. Refer to
   // SmallestUnCommittedSeq for more details.
@@ -485,7 +485,7 @@ void WritePreparedTxnDB::AddCommitted(uint64_t prepare_seq, uint64_t commit_seq,
   bool to_be_evicted = GetCommitEntry(indexed_seq, &evicted_64b, &evicted);
   if (LIKELY(to_be_evicted)) {
     assert(evicted.prep_seq != prepare_seq);
-    auto prev_max = max_evicted_seq_.load(std::memory_order_acquire);
+    const auto prev_max = max_evicted_seq_.load(std::memory_order_acquire);
     ROCKS_LOG_DETAILS(info_log_,
                       "Evicting %" PRIu64 ",%" PRIu64 " with max %" PRIu64,
                       evicted.prep_seq, evicted.commit_seq, prev_max);
@@ -605,8 +605,8 @@ bool WritePreparedTxnDB::ExchangeCommitEntry(const uint64_t indexed_seq,
   return succ;
 }
 
-void WritePreparedTxnDB::AdvanceMaxEvictedSeq(const SequenceNumber& prev_max,
-                                              const SequenceNumber& new_max) {
+void WritePreparedTxnDB::AdvanceMaxEvictedSeq(SequenceNumber prev_max,
+                                              SequenceNumber new_max) {
   ROCKS_LOG_DETAILS(info_log_,
                     "AdvanceMaxEvictedSeq overhead %" PRIu64 " => %" PRIu64,
                     prev_max, new_max);
@@ -627,7 +627,7 @@ void WritePreparedTxnDB::AdvanceMaxEvictedSeq(const SequenceNumber& prev_max,
   // We use max as the version of snapshots to identify how fresh are the
   // snapshot list. This works because the snapshots are between 0 and
   // max, so the larger the max, the more complete they are.
-  SequenceNumber new_snapshots_version = new_max;
+  const SequenceNumber new_snapshots_version = new_max;
   std::vector<SequenceNumber> snapshots;
   bool update_snapshots = false;
   if (new_snapshots_version > snapshots_version_) {
@@ -642,7 +642,7 @@ void WritePreparedTxnDB::AdvanceMaxEvictedSeq(const SequenceNumber& prev_max,
     if (!snapshots.empty()) {
       WriteLock wl(&old_commit_map_mutex_);
       for (auto snap : snapshots) {
-        // This allows IsInSnapshot to tell apart the reads from in valid
+        // This allows IsInSnapshot to tell apart the reads from invalid
         // snapshots from the reads from committed values in valid snapshots.
         old_commit_map_[snap];
       }
@@ -660,7 +660,7 @@ void WritePreparedTxnDB::AdvanceMaxEvictedSeq(const SequenceNumber& prev_max,
 }
 
 const Snapshot* WritePreparedTxnDB::GetSnapshot() {
-  const bool kForWWConflictCheck = true;
+  constexpr bool kForWWConflictCheck = true;
   return GetSnapshotInternal(!kForWWConflictCheck);
 }
 
@@ -811,8 +811,7 @@ void WritePreparedTxnDB::CleanupReleasedSnapshots(
 }
 
 void WritePreparedTxnDB::UpdateSnapshots(
-    const std::vector<SequenceNumber>& snapshots,
-    const SequenceNumber& version) {
+    const std::vector<SequenceNumber>& snapshots, SequenceNumber version) {
   ROCKS_LOG_DETAILS(info_log_, "UpdateSnapshots with version %" PRIu64,
                     version);
   TEST_SYNC_POINT("WritePreparedTxnDB::UpdateSnapshots:p:start");
@@ -881,7 +880,7 @@ void WritePreparedTxnDB::CheckAgainstSnapshots(const CommitEntry& evicted) {
   // after the update. Since the survived snapshots are written in a higher
   // place before gets overwritten the reader that reads bottom-up will
   // eventully see it.
-  const bool next_is_larger = true;
+  constexpr bool next_is_larger = true;
   // We will set to true if the border line snapshot suggests that.
   bool search_larger_list = false;
   size_t ip1 = std::min(cnt, SNAPSHOT_CACHE_SIZE);

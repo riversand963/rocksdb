@@ -29,7 +29,10 @@
 #include "utilities/transactions/write_prepared_txn.h"
 
 namespace ROCKSDB_NAMESPACE {
-enum SnapshotBackup : bool { kUnbackedByDBSnapshot, kBackedByDBSnapshot };
+enum SnapshotBackup : bool {
+  kUnbackedByDBSnapshot = false,
+  kBackedByDBSnapshot = true,
+};
 
 // A PessimisticTransactionDB that writes data to DB after prepare phase of 2PC.
 // In this way some data in the DB might not be committed. The DB provides
@@ -58,11 +61,10 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
     Init(txn_db_options);
   }
 
-  virtual ~WritePreparedTxnDB();
+  ~WritePreparedTxnDB() override;
 
-  virtual Status Initialize(
-      const std::vector<size_t>& compaction_enabled_cf_indices,
-      const std::vector<ColumnFamilyHandle*>& handles) override;
+  Status Initialize(const std::vector<size_t>& compaction_enabled_cf_indices,
+                    const std::vector<ColumnFamilyHandle*>& handles) override;
 
   Transaction* BeginTransaction(const WriteOptions& write_options,
                                 const TransactionOptions& txn_options,
@@ -83,26 +85,24 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
                        size_t batch_cnt, WritePreparedTxn* txn);
 
   using DB::Get;
-  virtual Status Get(const ReadOptions& options,
-                     ColumnFamilyHandle* column_family, const Slice& key,
-                     PinnableSlice* value) override;
+  Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
+             const Slice& key, PinnableSlice* value) override;
 
   using DB::MultiGet;
-  virtual std::vector<Status> MultiGet(
+  std::vector<Status> MultiGet(
       const ReadOptions& options,
       const std::vector<ColumnFamilyHandle*>& column_family,
       const std::vector<Slice>& keys,
       std::vector<std::string>* values) override;
 
   using DB::NewIterator;
-  virtual Iterator* NewIterator(const ReadOptions& options,
-                                ColumnFamilyHandle* column_family) override;
+  Iterator* NewIterator(const ReadOptions& options,
+                        ColumnFamilyHandle* column_family) override;
 
   using DB::NewIterators;
-  virtual Status NewIterators(
-      const ReadOptions& options,
-      const std::vector<ColumnFamilyHandle*>& column_families,
-      std::vector<Iterator*>* iterators) override;
+  Status NewIterators(const ReadOptions& options,
+                      const std::vector<ColumnFamilyHandle*>& column_families,
+                      std::vector<Iterator*>* iterators) override;
 
   // Check whether the transaction that wrote the value with sequence number seq
   // is visible to the snapshot with sequence number snapshot_seq.
@@ -440,12 +440,11 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
       const std::vector<ColumnFamilyHandle*>& handles) override;
   void UpdateCFComparatorMap(ColumnFamilyHandle* handle) override;
 
-  virtual const Snapshot* GetSnapshot() override;
+  const Snapshot* GetSnapshot() override;
   SnapshotImpl* GetSnapshotInternal(bool for_ww_conflict_check);
 
  protected:
-  virtual Status VerifyCFOptions(
-      const ColumnFamilyOptions& cf_options) override;
+  Status VerifyCFOptions(const ColumnFamilyOptions& cf_options) override;
   // Assign the min and max sequence numbers for reading from the db. A seq >
   // max is not valid, and a seq < min is valid, and a min <= seq < max requires
   // further checking. Normally max is defined by the snapshot and min is by
@@ -453,7 +452,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   inline SnapshotBackup AssignMinMaxSeqs(const Snapshot* snapshot,
                                          SequenceNumber* min,
                                          SequenceNumber* max);
-  // Validate is a snapshot sequence number is still valid based on the latest
+  // Validate if a snapshot sequence number is still valid based on the latest
   // db status. backed_by_snapshot specifies if the number is baked by an actual
   // snapshot object. order specified the memory order with which we load the
   // atomic variables: relax is enough for the default since we care about last
@@ -621,8 +620,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // concurrently. The concurrent invocations of this function is equivalent to
   // a serial invocation in which the last invocation is the one with the
   // largest new_max value.
-  void AdvanceMaxEvictedSeq(const SequenceNumber& prev_max,
-                            const SequenceNumber& new_max);
+  void AdvanceMaxEvictedSeq(SequenceNumber prev_max, SequenceNumber new_max);
 
   inline SequenceNumber SmallestUnCommittedSeq() {
     // Note: We have two lists to look into, but for performance reasons they
@@ -637,7 +635,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
     // that the ::top that we read would be lower the ::top if we had otherwise
     // update/read them atomically.
     auto next_prepare = db_impl_->GetLatestSequenceNumber() + 1;
-    auto min_prepare = prepared_txns_.top();
+    auto min_prepared = prepared_txns_.top();
     // Since we update the prepare_heap always from the main write queue via
     // PreReleaseCallback, the prepared_txns_.top() indicates the smallest
     // prepared data in 2pc transactions. For non-2pc transactions that are
@@ -650,7 +648,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
         return *delayed_prepared_.begin();
       }
     }
-    bool empty = min_prepare == kMaxSequenceNumber;
+    bool empty = min_prepared == kMaxSequenceNumber;
     if (empty) {
       // Since GetLatestSequenceNumber is updated
       // after prepared_txns_ are, the value of GetLatestSequenceNumber would
@@ -659,7 +657,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
       // that latest value in the memtable.
       return next_prepare;
     } else {
-      return std::min(min_prepare, next_prepare);
+      return std::min(min_prepared, next_prepare);
     }
   }
 
@@ -684,7 +682,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // invocation in which the last invocation is the one with the largest
   // version value.
   void UpdateSnapshots(const std::vector<SequenceNumber>& snapshots,
-                       const SequenceNumber& version);
+                       SequenceNumber version);
   // Check the new list of new snapshots against the old one to see  if any of
   // the snapshots are released and to do the cleanup for the released snapshot.
   void CleanupReleasedSnapshots(
@@ -745,7 +743,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // a filled one. Thread-safety is provided with commit_cache_mutex_.
   std::unique_ptr<std::atomic<CommitEntry64b>[]> commit_cache_;
   // The largest evicted *commit* sequence number from the commit_cache_. If a
-  // seq is smaller than max_evicted_seq_ is might or might not be present in
+  // seq is smaller than max_evicted_seq_ it might or might not be present in
   // commit_cache_. So commit_cache_ must first be checked before consulting
   // with max_evicted_seq_.
   std::atomic<uint64_t> max_evicted_seq_ = {};
@@ -812,14 +810,14 @@ class WritePreparedTxnReadCallback : public ReadCallback {
     (void)backed_by_snapshot_;  // to silence unused private field warning
   }
 
-  virtual ~WritePreparedTxnReadCallback() {
+  ~WritePreparedTxnReadCallback() override {
     // If it is not backed by snapshot, the caller must check validity
     assert(valid_checked_ || backed_by_snapshot_ == kBackedByDBSnapshot);
   }
 
   // Will be called to see if the seq number visible; if not it moves on to
   // the next seq number.
-  inline virtual bool IsVisibleFullCheck(SequenceNumber seq) override {
+  inline bool IsVisibleFullCheck(SequenceNumber seq) override {
     auto snapshot = max_visible_seq_;
     bool snap_released = false;
     auto ret =
@@ -856,10 +854,9 @@ class AddPreparedCallback : public PreReleaseCallback {
         first_prepare_batch_(first_prepare_batch) {
     (void)two_write_queues_;  // to silence unused private field warning
   }
-  virtual Status Callback(SequenceNumber prepare_seq,
-                          bool is_mem_disabled __attribute__((__unused__)),
-                          uint64_t log_number, size_t index,
-                          size_t total) override {
+  Status Callback(SequenceNumber prepare_seq,
+                  bool is_mem_disabled __attribute__((__unused__)),
+                  uint64_t log_number, size_t index, size_t total) override {
     assert(index < total);
     // To reduce the cost of lock acquisition competing with the concurrent
     // prepare requests, lock on the first callback and unlock on the last.
@@ -872,7 +869,7 @@ class AddPreparedCallback : public PreReleaseCallback {
     if (do_lock) {
       db_->prepared_txns_.push_pop_mutex()->Lock();
     }
-    const bool kLocked = true;
+    constexpr bool kLocked = true;
     for (size_t i = 0; i < sub_batch_cnt_; i++) {
       db_->AddPrepared(prepare_seq + i, kLocked);
     }
@@ -920,10 +917,9 @@ class WritePreparedCommitEntryPreReleaseCallback : public PreReleaseCallback {
     assert((aux_batch_cnt_ > 0) != (aux_seq == kMaxSequenceNumber));  // xor
   }
 
-  virtual Status Callback(SequenceNumber commit_seq,
-                          bool is_mem_disabled __attribute__((__unused__)),
-                          uint64_t, size_t /*index*/,
-                          size_t /*total*/) override {
+  Status Callback(SequenceNumber commit_seq,
+                  bool is_mem_disabled __attribute__((__unused__)), uint64_t,
+                  size_t /*index*/, size_t /*total*/) override {
     // Always commit from the 2nd queue
     assert(!db_impl_->immutable_db_options().two_write_queues ||
            is_mem_disabled);
@@ -1080,6 +1076,7 @@ SnapshotBackup WritePreparedTxnDB::AssignMinMaxSeqs(const Snapshot* snapshot,
     *min =
         static_cast_with_check<const SnapshotImpl>(snapshot)->min_uncommitted_;
     *max = static_cast_with_check<const SnapshotImpl>(snapshot)->number_;
+    assert(*min < *max);
     return kBackedByDBSnapshot;
   } else {
     *min = SmallestUnCommittedSeq();

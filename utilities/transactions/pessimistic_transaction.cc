@@ -253,11 +253,11 @@ Status WriteCommittedTxn::PrepareInternal() {
   } mark_log_callback(db_impl_,
                       db_impl_->immutable_db_options().two_write_queues);
 
-  WriteCallback* const kNoWriteCallback = nullptr;
-  const uint64_t kRefNoLog = 0;
-  const bool kDisableMemtable = true;
-  SequenceNumber* const KIgnoreSeqUsed = nullptr;
-  const size_t kNoBatchCount = 0;
+  constexpr WriteCallback* kNoWriteCallback = nullptr;
+  constexpr uint64_t kRefNoLog = 0;
+  constexpr bool kDisableMemtable = true;
+  constexpr SequenceNumber* KIgnoreSeqUsed = nullptr;
+  constexpr size_t kNoBatchCount = 0;
   s = db_impl_->WriteImpl(write_options, GetWriteBatch()->GetWriteBatch(),
                           kNoWriteCallback, &log_number_, kRefNoLog,
                           kDisableMemtable, KIgnoreSeqUsed, kNoBatchCount,
@@ -566,7 +566,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   std::string key_str = key.ToString();
 
   PointLockStatus status;
-  bool lock_upgrade;
+  bool lock_upgrade = false;
   bool previously_locked;
   if (tracked_locks_->IsPointLockSupported()) {
     status = tracked_locks_->GetPointLockStatus(cfh_id, key_str);
@@ -575,8 +575,6 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   } else {
     // If the record is tracked, we can assume it was locked, too.
     previously_locked = assume_tracked;
-    status.locked = false;
-    lock_upgrade = false;
   }
 
   // Lock this key if this transactions hasn't already locked it or we require

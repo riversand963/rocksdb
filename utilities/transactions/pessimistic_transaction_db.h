@@ -35,9 +35,9 @@ class PessimisticTransactionDB : public TransactionDB {
   explicit PessimisticTransactionDB(StackableDB* db,
                                     const TransactionDBOptions& txn_db_options);
 
-  virtual ~PessimisticTransactionDB();
+  ~PessimisticTransactionDB() override;
 
-  virtual const Snapshot* GetSnapshot() override { return db_->GetSnapshot(); }
+  const Snapshot* GetSnapshot() override { return db_->GetSnapshot(); }
 
   virtual Status Initialize(
       const std::vector<size_t>& compaction_enabled_cf_indices,
@@ -48,27 +48,24 @@ class PessimisticTransactionDB : public TransactionDB {
                                 Transaction* old_txn) override = 0;
 
   using StackableDB::Put;
-  virtual Status Put(const WriteOptions& options,
-                     ColumnFamilyHandle* column_family, const Slice& key,
-                     const Slice& val) override;
+  Status Put(const WriteOptions& options, ColumnFamilyHandle* column_family,
+             const Slice& key, const Slice& val) override;
 
   using StackableDB::Delete;
-  virtual Status Delete(const WriteOptions& wopts,
-                        ColumnFamilyHandle* column_family,
-                        const Slice& key) override;
+  Status Delete(const WriteOptions& wopts, ColumnFamilyHandle* column_family,
+                const Slice& key) override;
 
   using StackableDB::SingleDelete;
-  virtual Status SingleDelete(const WriteOptions& wopts,
-                              ColumnFamilyHandle* column_family,
-                              const Slice& key) override;
+  Status SingleDelete(const WriteOptions& wopts,
+                      ColumnFamilyHandle* column_family,
+                      const Slice& key) override;
 
   using StackableDB::Merge;
-  virtual Status Merge(const WriteOptions& options,
-                       ColumnFamilyHandle* column_family, const Slice& key,
-                       const Slice& value) override;
+  Status Merge(const WriteOptions& options, ColumnFamilyHandle* column_family,
+               const Slice& key, const Slice& value) override;
 
   using TransactionDB::Write;
-  virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+  Status Write(const WriteOptions& opts, WriteBatch* updates) override;
   inline Status WriteWithConcurrencyControl(const WriteOptions& opts,
                                             WriteBatch* updates) {
     // Need to lock all keys in this batch to prevent write conflicts with
@@ -90,12 +87,12 @@ class PessimisticTransactionDB : public TransactionDB {
   }
 
   using StackableDB::CreateColumnFamily;
-  virtual Status CreateColumnFamily(const ColumnFamilyOptions& options,
-                                    const std::string& column_family_name,
-                                    ColumnFamilyHandle** handle) override;
+  Status CreateColumnFamily(const ColumnFamilyOptions& options,
+                            const std::string& column_family_name,
+                            ColumnFamilyHandle** handle) override;
 
   using StackableDB::DropColumnFamily;
-  virtual Status DropColumnFamily(ColumnFamilyHandle* column_family) override;
+  Status DropColumnFamily(ColumnFamilyHandle* column_family) override;
 
   Status TryLock(PessimisticTransaction* txn, uint32_t cfh_id,
                  const std::string& key, bool exclusive);
@@ -209,7 +206,7 @@ class WriteCommittedTxnDB : public PessimisticTransactionDB {
                                const TransactionDBOptions& txn_db_options)
       : PessimisticTransactionDB(db, txn_db_options) {}
 
-  virtual ~WriteCommittedTxnDB() {}
+  ~WriteCommittedTxnDB() override {}
 
   Transaction* BeginTransaction(const WriteOptions& write_options,
                                 const TransactionOptions& txn_options,
@@ -218,10 +215,10 @@ class WriteCommittedTxnDB : public PessimisticTransactionDB {
   // Optimized version of ::Write that makes use of skip_concurrency_control
   // hint
   using TransactionDB::Write;
-  virtual Status Write(const WriteOptions& opts,
-                       const TransactionDBWriteOptimizations& optimizations,
-                       WriteBatch* updates) override;
-  virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+  Status Write(const WriteOptions& opts,
+               const TransactionDBWriteOptimizations& optimizations,
+               WriteBatch* updates) override;
+  Status Write(const WriteOptions& opts, WriteBatch* updates) override;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
